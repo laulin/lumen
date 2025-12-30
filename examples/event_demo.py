@@ -12,60 +12,55 @@ import sdl2.ext
 def main():
     win = Window("Events Demo", 800, 600)
     
-    # State
-    rect_color = [255, 0, 0, 255]
-
-    def on_click():
-        print("Clicked!")
-        # Toggle color
-        if rect_color[0] == 255:
-            rect_color[0] = 0
-            rect_color[1] = 255
-        else:
-            rect_color[0] = 255
-            rect_color[1] = 0
-
-    layer = Layer(0, 0, "100%", "100%")
-    
-    # Clickable Rectangle
-    rect = Rectangle(
-        x="40%", y="40%", 
-        width="20%", height="20%",
-        color=tuple(rect_color),
-        id="color_btn",
+    # Layer 1 (Bottom)
+    layer1 = Layer(0, 0, "100%", "100%")
+    rect1 = Rectangle(
+        x="20%", y="20%", 
+        width="40%", height="40%",
+        color=(255, 0, 0, 255), # Red
+        id="rect_bottom",
         listen_events=[core.EVENT_CLICK]
     )
+    layer1.children = [rect1]
+
+    # Layer 2 (Top)
+    layer2 = Layer(0, 0, "100%", "100%")
+    rect2 = Rectangle(
+        x="40%", y="40%", 
+        width="40%", height="40%",
+        color=(0, 0, 255, 255), # Blue
+        id="rect_top",
+        listen_events=[core.EVENT_CLICK]
+    )
+    layer2.children = [rect2]
     
+    print("Click on rectangles. Blue is on top of Red.")
+
     running = True
     while running:
-        # Update rect color from state
-        rect.color = tuple(rect_color)
-        
-        layer.children = [rect] # Reset children
-        
-        display_list = [layer.to_data()]
+        # Display list with both layers (layer2 is drawn last -> on top)
+        display_list = [layer1.to_data(), layer2.to_data()]
         win.render(display_list)
         
         # Poll UI Events
         ui_events = win.get_ui_events()
         for event in ui_events:
-            if event["type"] == core.EVENT_CLICK and event["target"] == "color_btn":
-                on_click()
+            if event["type"] == core.EVENT_CLICK:
+                target = event["target"]
+                print(f"Clicked: {target}")
+                
+                # Visual feedback
+                if target == "rect_top":
+                    print("  -> Top Blue Rect hit!")
+                elif target == "rect_bottom":
+                    print("  -> Bottom Red Rect hit!")
 
-        # Handle Quit manually for now (since get_ui_events consumes SDL events)
-        # Actually, get_ui_events consumes them, so we need a way to check for QUIT.
-        # Ideally get_ui_events should maybe yield Special events or we should check peeks?
-        # For this simple implementation, let's assume get_ui_events SHOULD handle general app events 
-        # or we should rely on a better event loop.
-        # But wait, `sdl2.ext.get_events()` clears the queue.
-        # So `win.get_ui_events()` effectively swallows QUIT if we don't return it.
-        # Let's modify get_ui_events to maybe return QUIT or handle it? 
-        # Or better, let's fix the demo to work with limitations: 
-        # We can implement a "check quit" inside the loop here if we modify Window to pass-through or return a QUIT event.
-        # But for now, let's just make sure we don't block closing.
-        # Actually, `get_ui_events` iterates all events. We should probably pass non-consumed events back or handle QUIT there.
-        # Let's add QUIT support to `get_ui_events` for the demo to work.
-        pass
+        # Handle Quit manually (simple check)
+        events = sdl2.ext.get_events()
+        for event in events:
+             if event.type == sdl2.SDL_QUIT:
+                running = False
+
 
                 
     sdl2.ext.quit()

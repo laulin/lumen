@@ -55,29 +55,36 @@ class Window:
             # Handle Click
             if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
                 mx, my = event.button.x, event.button.y
-                clicked_item = self._find_hit(mx, my)
+                # Pass the event type we are looking for (CLICK)
+                clicked_item = self._find_hit(mx, my, core.EVENT_CLICK)
                 
                 if clicked_item:
                     item_id = clicked_item.get(core.KEY_ID)
-                    listen_events = clicked_item.get(core.KEY_LISTEN_EVENTS, [])
+                    # We already know it listens to CLICK because _find_hit filtered it
                     
-                    if item_id and core.EVENT_CLICK in listen_events:
+                    if item_id:
                         ui_events.append({
                             "type": core.EVENT_CLICK,
                             "target": item_id
                         })
-                        # Consume event? Assuming yes for top-most match.
 
         return ui_events
 
-    def _find_hit(self, mx: int, my: int) -> Dict[str, Any]:
-        """Find the top-most item at coordinates (mx, my)."""
+    def _find_hit(self, mx: int, my: int, required_event: str) -> Dict[str, Any]:
+        """
+        Find the top-most item at (mx, my) that listens to required_event.
+        Returns None if no listening item is found.
+        """
         # Iterate in reverse to find top-most element first
         for rect, item in reversed(self._hit_list):
             x, y, w, h = rect
             if x <= mx < x + w and y <= my < y + h:
-                return item
+                # Check if this item listens to the required event
+                listen_events = item.get(core.KEY_LISTEN_EVENTS, [])
+                if required_event in listen_events:
+                    return item
         return None
+
 
 
     def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
