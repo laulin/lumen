@@ -18,8 +18,10 @@ KEY_COLOR = "color"
 KEY_ALIGN = "align"
 KEY_WRAP = "wrap"
 KEY_ELLIPSIS = "ellipsis"
+KEY_MARKUP = "markup"
 
 EVENT_CLICK = "click"
+EVENT_LINK_CLICK = "link_click"
 
 EVENT_HOVER_START = "hover_start"
 EVENT_HOVER_END = "hover_end"

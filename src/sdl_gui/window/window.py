@@ -1,7 +1,7 @@
 import sdl2
 import sdl2.ext
 from typing import List, Dict, Any, Tuple, Union
-from sdl_gui import core
+from sdl_gui import core, text_utils
 
 
 class Window:
@@ -74,14 +74,19 @@ class Window:
                 clicked_item = self._find_hit(mx, my, core.EVENT_CLICK)
                 
                 if clicked_item:
-                    item_id = clicked_item.get(core.KEY_ID)
-                    # We already know it listens to CLICK because _find_hit filtered it
-                    
-                    if item_id:
-                        ui_events.append({
-                            "type": core.EVENT_CLICK,
-                            "target": item_id
-                        })
+                    # Check if it's a link
+                    if clicked_item.get("type") == "link":
+                         ui_events.append({
+                             "type": core.EVENT_LINK_CLICK,
+                             "target": clicked_item.get("target")
+                         })
+                    else:
+                        item_id = clicked_item.get(core.KEY_ID)
+                        if item_id:
+                            ui_events.append({
+                                "type": core.EVENT_CLICK,
+                                "target": item_id
+                            })
 
         return ui_events
 
@@ -275,71 +280,72 @@ class Window:
         if not text:
             return
             
+        markup = item.get(core.KEY_MARKUP, False)
+        if markup:
+             self._render_rich_text(item, rect)
+             return
+             
+        # ... (Old plain text logic calls _render_plain_wrapped)
+        # Refactoring to keep code clean.
+        self._render_plain_text(item, rect, text)
+
+    def _get_font_manager(self, font_path, size, color, bold=False):
+        cache_key = f"{font_path}_{size}_{color}_{bold}"
+        font_manager = self._font_cache.get(cache_key)
+        if not font_manager:
+            try:
+                font_manager = sdl2.ext.FontManager(font_path, size=size, color=color)
+                if bold:
+                    # Attempt to set bold style
+                    # Note: pysdl2 FontManager.font is the TTF_Font pointer usually?
+                    # Let's check if we can access it. 
+                    # If implementation details differ, simple color/link works at least.
+                    from sdl2 import sdlttf
+                    # Accessing hidden _font or public font attribute
+                    # pysdl2 0.9.x FontManager stores font in `font` attribute?
+                    # It seems it creates a font per size/style request?
+                    # Actually FontManager is designed to manage multiple fonts? 
+                    # No, pysdl2's FontManager is usually for one font face/size.
+                    # We reuse logic.
+                    if hasattr(font_manager, "font"):
+                         sdlttf.TTF_SetFontStyle(font_manager.font, sdlttf.TTF_STYLE_BOLD)
+                self._font_cache[cache_key] = font_manager
+            except Exception:
+                return None
+        return font_manager
+
+    def _render_plain_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], text: str) -> None:
+        # Extracted plain text logic
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        
-        # Resolve size relative to element height
         raw_size = item.get(core.KEY_FONT_SIZE, 16)
         size = self._resolve_val(raw_size, rect[3])
-        if size <= 0:
-            size = 1
-            
+        if size <= 0: size = 1
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
         align = item.get(core.KEY_ALIGN, "left")
         do_wrap = item.get(core.KEY_WRAP, True)
         do_ellipsis = item.get(core.KEY_ELLIPSIS, True)
         
-        cache_key = f"{font_path}_{size}_{color}"
-        
-        font_manager = self._font_cache.get(cache_key)
-        if not font_manager:
-            try:
-                # Need to initialize ttf if not already? FontManager does it?
-                # FontManager(font_path, size=16, color=WHITE, bg_color=BLACK)
-                font_manager = sdl2.ext.FontManager(font_path, size=size, color=color)
-                self._font_cache[cache_key] = font_manager
-            except Exception as e:
-                # print(f"Failed to load font {font_path}: {e}")
-                return
+        font_manager = self._get_font_manager(font_path, size, color)
+        if not font_manager: return
 
         try:
-             # Basic rendering if no wrap needed or single line fits
-            # But checking fits requires measurement.
-            
-            # Helper to measure text
             def measure(text_str):
-                # Using size=size (already set in manager)
-                # render returns surface, we can check w
-                # This is a bit heavy, invoking render to measure. 
-                # SDL_ttf has SizeText, but FontManager hides it mostly?
-                # We can access font object?
-                # For simplicity, we assume we render to measure if no direct access.
-                # Actually FontManager.render(text) returns surface.
                 surf = font_manager.render(text_str)
                 return surf.w, surf.h
 
             max_width = rect[2]
             max_height = rect[3]
-            
             lines = []
             
             if not do_wrap:
                 lines = [text]
             else:
-                # Wrapping logic
                 words = text.split(" ")
                 current_line = []
-                
-                # Check metrics once
-                _, line_height = measure("Tg") # Approximation of line height
-                
-                # This is a naive word wrapper which calls render many times. 
-                # In performance critical code, use TTF_SizeText directly.
-                
                 for word in words:
                     test_line = " ".join(current_line + [word])
                     w, h = measure(test_line)
                     if w > max_width and current_line:
-                        # Line full, push current_line
                          lines.append(" ".join(current_line))
                          current_line = [word]
                     else:
@@ -347,65 +353,165 @@ class Window:
                 if current_line:
                     lines.append(" ".join(current_line))
 
-            # Ellipsis logic
-            # Check total height
             _, single_line_h = measure("Tg")
             total_height = len(lines) * single_line_h
             
             if total_height > max_height and do_ellipsis:
-                # How many lines fit?
                 max_lines = max(1, max_height // single_line_h)
                 if len(lines) > max_lines:
                     lines = lines[:max_lines]
-                    # Truncate last line with ...
-                    # Iteratively remove chars until it fits
                     last_line = lines[-1]
                     while True:
                         w, _ = measure(last_line + "...")
                         if w <= max_width:
                             lines[-1] = last_line + "..."
                             break
-                        if len(last_line) == 0:
-                            break
+                        if len(last_line) == 0: break
                         last_line = last_line[:-1]
             
-            # Render lines
             current_y = rect[1]
-            
-            # Vertical alignment (if single line or block fits?)
-            # Usually text flow starts top-left.
-            # If we want vertical centering for the whole block:
-            block_height = len(lines) * single_line_h
-            if block_height < max_height:
-                 # Standard vertical centering
-                 # But VBox usually layouting top-down. 
-                 # Let's stick to top align for now inside the rect, usually desirable for text flow.
-                 # If user wants center, they align the rect itself? 
-                 # But our align property is horizontal.
-                 # Let's keep top alignment inside the allocated rect.
-                 pass
-
             for line in lines:
                 surface = font_manager.render(line)
-                if not surface:
-                    continue
+                if not surface: continue
                 texture = sdl2.ext.Texture(self.renderer, surface)
-                
-                # Align line horizontally
                 tx = rect[0]
                 if align == "center":
                     tx = rect[0] + (rect[2] - surface.w) // 2
                 elif align == "right":
                     tx = rect[0] + rect[2] - surface.w
-                
                 self.renderer.copy(texture, dstrect=(tx, current_y, surface.w, surface.h))
                 current_y += single_line_h
-                
-                if current_y > rect[1] + max_height:
-                    break
+                if current_y > rect[1] + max_height: break
 
         except Exception:
             return
+
+    def _render_rich_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        text = item.get(core.KEY_TEXT, "")
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        raw_size = item.get(core.KEY_FONT_SIZE, 16)
+        size = self._resolve_val(raw_size, rect[3])
+        if size <= 0: size = 1
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        do_wrap = item.get(core.KEY_WRAP, True)
+        
+        # Parse segments
+        segments = text_utils.parse_rich_text(text, base_color)
+        
+        # Word wrapping with segments
+        # We need to tokenize segments into words but keep style info
+        # Structure: list of (word_text, segment_info)
+        
+        chunked_words = []
+        for seg in segments:
+            # simple split by space, preserving space logic?
+            # text_utils.parse_rich_text likely returns full text in segments.
+            # We split by spaces.
+            words = seg.text.split(" ")
+            for i, word in enumerate(words):
+                # Add space if not last word (or if original text had space?)
+                # Simplified: re-add space after word if it wasn't the last one
+                # Actually, split consumes spaces. We need to handle spacing manually in rendering
+                # or assume single space.
+                suffix = " " if i < len(words) - 1 else ""
+                chunked_words.append((word + suffix, seg))
+        
+        # Layout lines
+        lines = [] # List of List[Tuple[str, TextSegment]] (rendering chunks)
+        current_line = []
+        current_line_width = 0
+        max_width = rect[2]
+        
+        # Helper to measure a chunk
+        measure_cache = {}
+        def measure_chunk(text_str, seg):
+            # We need correct font manager (bold/color doesn't affect metric width usually, but bold might)
+            # Use separate font manager for measurement?
+            # Key part is finding the font manager for this style
+            fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+            if not fm: return 0, 0
+            surf = fm.render(text_str)
+            return surf.w, surf.h
+
+        # Estimate line height (max of all used fonts? usually same size)
+        _, line_height = measure_chunk("Tg", segments[0] if segments else None) 
+        if line_height == 0: line_height = size # Fallback
+
+        for text_chunk, seg in chunked_words:
+            if not text_chunk:
+                continue
+            w, h = measure_chunk(text_chunk, seg)
+            line_height = max(line_height, h)
+            
+            if do_wrap and current_line and (current_line_width + w > max_width):
+                # New line
+                lines.append(current_line)
+                current_line = [(text_chunk, seg, w, h)]
+                current_line_width = w
+            else:
+                current_line.append((text_chunk, seg, w, h))
+                current_line_width += w
+                
+        if current_line:
+            lines.append(current_line)
+            
+        # Render
+        current_y = rect[1]
+        start_x = rect[0] # Left align for rich text complexity simplification
+        
+        for line in lines:
+            line_x = start_x
+            # TODO: Handle alignment (center/right) for rich text lines if needed.
+            # Calculating total width of line is easy (sum of w).
+            
+            for text_chunk, seg, w, h in line:
+                fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+                if not fm: continue
+                
+                # Render logic
+                surface = fm.render(text_chunk)
+                texture = sdl2.ext.Texture(self.renderer, surface)
+                self.renderer.copy(texture, dstrect=(line_x, current_y, surface.w, surface.h))
+                
+                # Handle Link Hitbox
+                if seg.link_target:
+                    # Register hit area
+                    # Absolute rect of this chunk
+                    chunk_rect = (line_x, current_y, surface.w, surface.h)
+                    # We need to add a specialized event listener item?
+                    # Or attach metadata to the current window's hit list?
+                    # The hit list normally stores (rect, item).
+                    # 'item' usually references the widget data.
+                    # We can create a synthetic item for the link.
+                    link_item = {
+                        core.KEY_ID: f"link_{seg.link_target}", # distinct ID if needed
+                        "link_target": seg.link_target,
+                        # We specifically listen for click, but trigger a link_click event.
+                        # Wait, `get_ui_events` translates CLICK to generic click event on ID.
+                        # User wants EVENT_LINK_CLICK with target.
+                        # Let's add a custom event type handling in `get_ui_events` or here?
+                        # `_find_hit` checks for event type support.
+                        # So we need synthetic item to say it supports 'click'.
+                        # Then in `get_ui_events`, if we click it, we check if it's a link?
+                        # Or better: `_find_hit` looks for 'link_click'? No, mouse acts on click.
+                        core.KEY_LISTEN_EVENTS: [core.EVENT_CLICK, core.EVENT_LINK_CLICK] # Hack?
+                    }
+                    # Actually, better:
+                    # We add a tuple to hit list. But hit list expects (rect, dict).
+                    # We add a dict that represents this link.
+                    # When CLICK happens, the generic logic returns this item.
+                    # We need `get_ui_events` to recognize it as a link and emit `link_click` instead of `click`.
+                    # Or we just add specific metadata.
+                    
+                    self._hit_list.append((chunk_rect, {
+                        "type": "link",
+                        "target": seg.link_target,
+                        core.KEY_LISTEN_EVENTS: [core.EVENT_CLICK]
+                    }))
+                
+                line_x += w
+                
+            current_y += line_height
         # Handle recursive layers? Usually layout items aren't layers, but if they are...
         # For this scope, let's assume primitives or nested layouts.
 

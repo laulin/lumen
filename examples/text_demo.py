@@ -68,18 +68,16 @@ def main():
     
     # Feature 1
     col1 = VBox(0, 0, "30%", "100%", margin=(0, 10, 0, 10))
-    c1_title = ResponsiveText(0, 0, "100%", 40, text="Fast", size=20, color=(0, 120, 200, 255), align="center")
-    c1_desc = ResponsiveText(0, 0, "100%", 60, text="Optimized rendering.", size=16, color=(60, 60, 60, 255), align="center")
+    c1_title = ResponsiveText(0, 0, "100%", 40, text="<b>Fast</b>", size=20, color=(0, 120, 200, 255), align="center", markup=True)
+    c1_desc = ResponsiveText(0, 0, "100%", 60, text="Optimized <color=#FF0000>rendering</color>.", size=16, color=(60, 60, 60, 255), align="center", markup=True)
     
-    # To simulate card bg, we'd need a rect, but VBox children stack.
-    # workaround: just text for now.
     col1.add_child(c1_title)
     col1.add_child(c1_desc)
 
     # Feature 2
     col2 = VBox(0, 0, "30%", "100%", margin=(0, 10, 0, 10))
-    c2_title = ResponsiveText(0, 0, "100%", 40, text="Flexible", size=20, color=(0, 180, 100, 255), align="center")
-    c2_desc = ResponsiveText(0, 0, "100%", 60, text="Nested layouts.", size=16, color=(60, 60, 60, 255), align="center")
+    c2_title = ResponsiveText(0, 0, "100%", 40, text="<b>Flexible</b>", size=20, color=(0, 180, 100, 255), align="center", markup=True)
+    c2_desc = ResponsiveText(0, 0, "100%", 60, text="Nested <link=layouts>layouts</link>.", size=16, color=(60, 60, 60, 255), align="center", markup=True)
     col2.add_child(c2_title)
     col2.add_child(c2_desc)
     
@@ -106,6 +104,11 @@ def main():
         display_list = [root.to_data()]
         win.render(display_list)
         
+        # Get and print UI events
+        ui_events = win.get_ui_events()
+        for ui_e in ui_events:
+            print(f"UI Event: {ui_e}")
+            
         events = sdl2.ext.get_events()
         for event in events:
             if event.type == sdl2.SDL_QUIT:
