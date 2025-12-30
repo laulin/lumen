@@ -61,6 +61,10 @@ class Window:
         """Render a single item recursively."""
 
         # Resolve current item's rect
+        # For Root/Layer items, we resolve against parent.
+        # However, for children of VBox/HBox, the position will be overridden by the layout algorithm.
+        # But here we handle generic resolution.
+        
         raw_rect = item.get(core.KEY_RECT)
         current_rect = parent_rect
         
@@ -73,9 +77,122 @@ class Window:
             children = item.get(core.KEY_CHILDREN, [])
             for child in children:
                 self._render_item(child, current_rect)
-                
+
+        elif item_type == core.TYPE_VBOX:
+            self._render_vbox(item, current_rect)
+
+        elif item_type == core.TYPE_HBOX:
+            self._render_hbox(item, current_rect)
+
         elif item_type == core.TYPE_RECT:
             color = item.get("color", (255, 255, 255, 255))
             if raw_rect: # Only draw if it has a rect
                 self.renderer.fill(current_rect, color)
+
+    def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render a VBox layout."""
+        x, y, w, h = rect
+        padding = item.get(core.KEY_PADDING, (0, 0, 0, 0)) # top, right, bottom, left
+        children = item.get(core.KEY_CHILDREN, [])
+        
+        # Cursor info
+        cursor_x = x + padding[3] # left
+        cursor_y = y + padding[0] # top
+        available_width = w - padding[1] - padding[3] # w - right - left
+        available_height = h - padding[0] - padding[2] # h - top - bottom
+        
+        for child in children:
+            margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0)) # t, r, b, l
+            
+            # Resolve child dimensions
+            # Width/Height are resolved against available space in VBox
+            child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
+            
+            # Resolve size (indices 2 and 3)
+            child_w = self._resolve_val(child_raw_rect[2], available_width)
+            child_h = self._resolve_val(child_raw_rect[3], available_height)
+            
+            # Position is determined by cursor + margin
+            child_x = cursor_x + margin[3]
+            child_y = cursor_y + margin[0]
+            
+            # Construct resolved rect for child
+            child_rect = (child_x, child_y, child_w, child_h)
+            
+            # Render child
+            # note: we pass child_rect as parent_rect, but for primitives without children it acts as their rect
+            # Wait, for primitives, _render_item resolves again. 
+            # We need to bypass re-resolution of X/Y if we enforce layout.
+            # But the recursive `_render_item` logic uses `_resolve_rect` which adds X/Y.
+            # If we pass `child_rect` as parent to `_render_item`, and child has `x=0, y=0`, it works.
+            # But if child has `x=10`, it adds 10. 
+            # Layouts usually ignore child position props, or treat them as offsets.
+            # Let's handle it by passing the resolved rect as the context, assuming child x/y are 0 or offsets.
+            
+            # Better approach: We need to override the child's resolved rect.
+            # `_render_item` logic fundamentally assumes relative resolution.
+            # If we call `_render_item(child, child_rect)`, it will resolve child's x/y against child_rect... 
+            # which is wrong. It resolves against PARENT rect.
+            
+            # To fix this, we need `_render_item` to accept an override or we construct a "virtual parent"
+            # such that the resolution yields `child_rect`.
+            
+            # Actually, standard behavior: Child X/Y in VBox should probably be ignored or treated as offset.
+            # Let's say we pass `rect` (VBox bounds) as parent, but we modify the child's data on the fly? No, mutation bad.
+            
+            # Let's split rendering logic. `_render_item` is for "flow" or "absolute relative".
+            # `_render_vbox` manually calculates positions.
+            
+            # If I call `self._render_item(child, ...)` it will trigger standard resolution.
+            # We want to Enforce the calculated rect.
+            
+            # Hack/Solution: Pass the calculated global rect and let render item handle it?
+            # Creating a dedicated method `_render_child_at(child, abs_rect)` might be cleaner.
+            
+            self._render_element_at(child, child_rect)
+            
+            # Advance cursor
+            cursor_y += margin[0] + child_h + margin[2]
+
+    def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render an HBox layout."""
+        x, y, w, h = rect
+        padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        children = item.get(core.KEY_CHILDREN, [])
+        
+        cursor_x = x + padding[3]
+        cursor_y = y + padding[0]
+        available_width = w - padding[1] - padding[3]
+        available_height = h - padding[0] - padding[2]
+        
+        for child in children:
+            margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            
+            child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
+            child_w = self._resolve_val(child_raw_rect[2], available_width)
+            child_h = self._resolve_val(child_raw_rect[3], available_height)
+            
+            child_x = cursor_x + margin[3]
+            child_y = cursor_y + margin[0]
+            
+            child_rect = (child_x, child_y, child_w, child_h)
+            
+            self._render_element_at(child, child_rect)
+            
+            cursor_x += margin[3] + child_w + margin[1]
+
+    def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render an element at a specific absolute rectangle."""
+        item_type = item.get(core.KEY_TYPE)
+        
+        if item_type == core.TYPE_VBOX:
+            self._render_vbox(item, rect)
+        elif item_type == core.TYPE_HBOX:
+            self._render_hbox(item, rect)
+        elif item_type == core.TYPE_RECT:
+            color = item.get("color", (255, 255, 255, 255))
+            self.renderer.fill(rect, color)
+        # Handle recursive layers? Usually layout items aren't layers, but if they are...
+        # For this scope, let's assume primitives or nested layouts.
+
 
