@@ -168,17 +168,29 @@ class Window:
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a VBox layout."""
         x, y, w, h = rect
-        padding = item.get(core.KEY_PADDING, (0, 0, 0, 0)) # top, right, bottom, left
+        raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        # Resolve padding
+        pt = self._resolve_val(raw_padding[0], h)
+        pr = self._resolve_val(raw_padding[1], w)
+        pb = self._resolve_val(raw_padding[2], h)
+        pl = self._resolve_val(raw_padding[3], w)
+        padding = (pt, pr, pb, pl)
+        
         children = item.get(core.KEY_CHILDREN, [])
         
         # Cursor info
-        cursor_x = x + padding[3] # left
-        cursor_y = y + padding[0] # top
-        available_width = w - padding[1] - padding[3] # w - right - left
-        available_height = h - padding[0] - padding[2] # h - top - bottom
+        cursor_x = x + pl # left
+        cursor_y = y + pt # top
+        available_width = w - pr - pl
+        available_height = h - pt - pb
         
         for child in children:
-            margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0)) # t, r, b, l
+            raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0)) # t, r, b, l
+            mt = self._resolve_val(raw_margin[0], available_height)
+            mr = self._resolve_val(raw_margin[1], available_width)
+            mb = self._resolve_val(raw_margin[2], available_height)
+            ml = self._resolve_val(raw_margin[3], available_width)
+            margin = (mt, mr, mb, ml)
             
             # Resolve child dimensions
             # Width/Height are resolved against available space in VBox
@@ -196,35 +208,6 @@ class Window:
             child_rect = (child_x, child_y, child_w, child_h)
             
             # Render child
-            # note: we pass child_rect as parent_rect, but for primitives without children it acts as their rect
-            # Wait, for primitives, _render_item resolves again. 
-            # We need to bypass re-resolution of X/Y if we enforce layout.
-            # But the recursive `_render_item` logic uses `_resolve_rect` which adds X/Y.
-            # If we pass `child_rect` as parent to `_render_item`, and child has `x=0, y=0`, it works.
-            # But if child has `x=10`, it adds 10. 
-            # Layouts usually ignore child position props, or treat them as offsets.
-            # Let's handle it by passing the resolved rect as the context, assuming child x/y are 0 or offsets.
-            
-            # Better approach: We need to override the child's resolved rect.
-            # `_render_item` logic fundamentally assumes relative resolution.
-            # If we call `_render_item(child, child_rect)`, it will resolve child's x/y against child_rect... 
-            # which is wrong. It resolves against PARENT rect.
-            
-            # To fix this, we need `_render_item` to accept an override or we construct a "virtual parent"
-            # such that the resolution yields `child_rect`.
-            
-            # Actually, standard behavior: Child X/Y in VBox should probably be ignored or treated as offset.
-            # Let's say we pass `rect` (VBox bounds) as parent, but we modify the child's data on the fly? No, mutation bad.
-            
-            # Let's split rendering logic. `_render_item` is for "flow" or "absolute relative".
-            # `_render_vbox` manually calculates positions.
-            
-            # If I call `self._render_item(child, ...)` it will trigger standard resolution.
-            # We want to Enforce the calculated rect.
-            
-            # Hack/Solution: Pass the calculated global rect and let render item handle it?
-            # Creating a dedicated method `_render_child_at(child, abs_rect)` might be cleaner.
-            
             self._render_element_at(child, child_rect)
             
             # Advance cursor
@@ -233,7 +216,14 @@ class Window:
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render an HBox layout."""
         x, y, w, h = rect
-        padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        # Resolve padding
+        pt = self._resolve_val(raw_padding[0], h)
+        pr = self._resolve_val(raw_padding[1], w)
+        pb = self._resolve_val(raw_padding[2], h)
+        pl = self._resolve_val(raw_padding[3], w)
+        padding = (pt, pr, pb, pl)
+        
         children = item.get(core.KEY_CHILDREN, [])
         
         cursor_x = x + padding[3]
@@ -242,7 +232,12 @@ class Window:
         available_height = h - padding[0] - padding[2]
         
         for child in children:
-            margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            mt = self._resolve_val(raw_margin[0], available_height)
+            mr = self._resolve_val(raw_margin[1], available_width)
+            mb = self._resolve_val(raw_margin[2], available_height)
+            ml = self._resolve_val(raw_margin[3], available_width)
+            margin = (mt, mr, mb, ml)
             
             child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
             child_w = self._resolve_val(child_raw_rect[2], available_width)
@@ -272,7 +267,7 @@ class Window:
             self._render_text(item, rect)
 
     def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
-        """Render text within a given rect."""
+        """Render text within a given rect with optional wrapping and ellipsis."""
         if not hasattr(self, "ttf_available") or not self.ttf_available:
             return
 
@@ -290,6 +285,8 @@ class Window:
             
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
         align = item.get(core.KEY_ALIGN, "left")
+        do_wrap = item.get(core.KEY_WRAP, True)
+        do_ellipsis = item.get(core.KEY_ELLIPSIS, True)
         
         cache_key = f"{font_path}_{size}_{color}"
         
@@ -305,24 +302,110 @@ class Window:
                 return
 
         try:
-            surface = font_manager.render(text)
-            if not surface:
-                return
-            texture = sdl2.ext.Texture(self.renderer, surface)
+             # Basic rendering if no wrap needed or single line fits
+            # But checking fits requires measurement.
+            
+            # Helper to measure text
+            def measure(text_str):
+                # Using size=size (already set in manager)
+                # render returns surface, we can check w
+                # This is a bit heavy, invoking render to measure. 
+                # SDL_ttf has SizeText, but FontManager hides it mostly?
+                # We can access font object?
+                # For simplicity, we assume we render to measure if no direct access.
+                # Actually FontManager.render(text) returns surface.
+                surf = font_manager.render(text_str)
+                return surf.w, surf.h
+
+            max_width = rect[2]
+            max_height = rect[3]
+            
+            lines = []
+            
+            if not do_wrap:
+                lines = [text]
+            else:
+                # Wrapping logic
+                words = text.split(" ")
+                current_line = []
+                
+                # Check metrics once
+                _, line_height = measure("Tg") # Approximation of line height
+                
+                # This is a naive word wrapper which calls render many times. 
+                # In performance critical code, use TTF_SizeText directly.
+                
+                for word in words:
+                    test_line = " ".join(current_line + [word])
+                    w, h = measure(test_line)
+                    if w > max_width and current_line:
+                        # Line full, push current_line
+                         lines.append(" ".join(current_line))
+                         current_line = [word]
+                    else:
+                        current_line.append(word)
+                if current_line:
+                    lines.append(" ".join(current_line))
+
+            # Ellipsis logic
+            # Check total height
+            _, single_line_h = measure("Tg")
+            total_height = len(lines) * single_line_h
+            
+            if total_height > max_height and do_ellipsis:
+                # How many lines fit?
+                max_lines = max(1, max_height // single_line_h)
+                if len(lines) > max_lines:
+                    lines = lines[:max_lines]
+                    # Truncate last line with ...
+                    # Iteratively remove chars until it fits
+                    last_line = lines[-1]
+                    while True:
+                        w, _ = measure(last_line + "...")
+                        if w <= max_width:
+                            lines[-1] = last_line + "..."
+                            break
+                        if len(last_line) == 0:
+                            break
+                        last_line = last_line[:-1]
+            
+            # Render lines
+            current_y = rect[1]
+            
+            # Vertical alignment (if single line or block fits?)
+            # Usually text flow starts top-left.
+            # If we want vertical centering for the whole block:
+            block_height = len(lines) * single_line_h
+            if block_height < max_height:
+                 # Standard vertical centering
+                 # But VBox usually layouting top-down. 
+                 # Let's stick to top align for now inside the rect, usually desirable for text flow.
+                 # If user wants center, they align the rect itself? 
+                 # But our align property is horizontal.
+                 # Let's keep top alignment inside the allocated rect.
+                 pass
+
+            for line in lines:
+                surface = font_manager.render(line)
+                if not surface:
+                    continue
+                texture = sdl2.ext.Texture(self.renderer, surface)
+                
+                # Align line horizontally
+                tx = rect[0]
+                if align == "center":
+                    tx = rect[0] + (rect[2] - surface.w) // 2
+                elif align == "right":
+                    tx = rect[0] + rect[2] - surface.w
+                
+                self.renderer.copy(texture, dstrect=(tx, current_y, surface.w, surface.h))
+                current_y += single_line_h
+                
+                if current_y > rect[1] + max_height:
+                    break
+
         except Exception:
             return
-
-        # Position alignment
-        tx, ty = rect[0], rect[1]
-        
-        if align == "center":
-            tx = rect[0] + (rect[2] - surface.w) // 2
-            ty = rect[1] + (rect[3] - surface.h) // 2
-        elif align == "right":
-             tx = rect[0] + rect[2] - surface.w
-             
-        # Just render at computed position
-        self.renderer.copy(texture, dstrect=(tx, ty, surface.w, surface.h))
         # Handle recursive layers? Usually layout items aren't layers, but if they are...
         # For this scope, let's assume primitives or nested layouts.
 

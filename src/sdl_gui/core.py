@@ -16,6 +16,8 @@ KEY_FONT = "font"
 KEY_FONT_SIZE = "font_size"
 KEY_COLOR = "color"
 KEY_ALIGN = "align"
+KEY_WRAP = "wrap"
+KEY_ELLIPSIS = "ellipsis"
 
 EVENT_CLICK = "click"
 

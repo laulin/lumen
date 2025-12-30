@@ -57,7 +57,8 @@ def main():
     hero_section = VBox(0, 0, "100%", 300, padding=(40, 40, 40, 40))
     
     headline = ResponsiveText(0, 0, "100%", 80, text="Build Faster GUIs", size=48, color=(33, 33, 33, 255), align="center")
-    subtitle = ResponsiveText(0, 0, "100%", 40, text="Responsive, native, and easy to use.", size=24, color=(100, 100, 100, 255), align="center")
+    subtitle_text = "Responsive, native, and easy to use. This text is long enough to demonstrate the new wrapping capabilities of the ResponsiveText primitive. It should automatically break into multiple lines."
+    subtitle = ResponsiveText(0, 0, "80%", 80, text=subtitle_text, size=18, color=(100, 100, 100, 255), align="center", margin=(0, "10%", 0, "10%"))
     
     hero_section.add_child(headline)
     hero_section.add_child(subtitle)

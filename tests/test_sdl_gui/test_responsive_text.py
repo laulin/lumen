@@ -9,6 +9,8 @@ class TestResponsiveText(unittest.TestCase):
         self.assertEqual(txt.size, 16)
         self.assertEqual(txt.color, (0, 0, 0, 255))
         self.assertEqual(txt.align, "left")
+        self.assertTrue(txt.wrap)
+        self.assertTrue(txt.ellipsis)
 
     def test_to_data(self):
         txt = ResponsiveText(x=10, y=10, width=100, height=30, 
@@ -24,6 +26,8 @@ class TestResponsiveText(unittest.TestCase):
         self.assertEqual(data[core.KEY_FONT_SIZE], "50%")
         self.assertEqual(data[core.KEY_COLOR], (255, 0, 0, 255))
         self.assertEqual(data[core.KEY_ALIGN], "center")
+        self.assertTrue(data[core.KEY_WRAP])
+        self.assertTrue(data[core.KEY_ELLIPSIS])
         self.assertEqual(data[core.KEY_ID], "txt1")
         self.assertEqual(data[core.KEY_RECT], [10, 10, 100, 30])
 

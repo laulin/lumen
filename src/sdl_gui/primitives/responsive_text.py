@@ -11,6 +11,8 @@ class ResponsiveText(BasePrimitive):
                  size: Union[int, str] = 16,
                  color: Tuple[int, int, int, int] = (0, 0, 0, 255),
                  align: str = "left",
+                 wrap: bool = True,
+                 ellipsis: bool = True,
                  padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
                  margin: Tuple[int, int, int, int] = (0, 0, 0, 0),
                  id: str = None,
@@ -21,6 +23,8 @@ class ResponsiveText(BasePrimitive):
         self.size = size
         self.color = color
         self.align = align
+        self.wrap = wrap
+        self.ellipsis = ellipsis
 
     def to_data(self) -> Dict[str, Any]:
         """Generate the display list data for this text."""
@@ -31,4 +35,6 @@ class ResponsiveText(BasePrimitive):
         data[core.KEY_FONT_SIZE] = self.size
         data[core.KEY_COLOR] = self.color
         data[core.KEY_ALIGN] = self.align
+        data[core.KEY_WRAP] = self.wrap
+        data[core.KEY_ELLIPSIS] = self.ellipsis
         return data
