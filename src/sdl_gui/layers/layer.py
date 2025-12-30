@@ -1,10 +1,11 @@
-from typing import List, Dict, Any, AnyStr
+from typing import List, Dict, Any, Union
 from sdl_gui import core
 
 class Layer:
     """A container layer that manages a list of children elements."""
     
-    def __init__(self, x: int, y: int, width: int, height: int):
+    def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str]):
+
         self.x = x
         self.y = y
         self.width = width

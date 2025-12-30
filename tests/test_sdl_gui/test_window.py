@@ -43,3 +43,31 @@ class TestWindow(unittest.TestCase):
         # fill called for rect (layer doesn't draw itself usually, but its children do)
         # Note: Implementation details of drawing might vary, assuming fill() for rect
         mock_renderer.fill.assert_called() 
+
+    @patch("sdl_gui.window.window.sdl2.ext")
+    @patch("sdl_gui.window.window.sdl2")
+    def test_render_percentages(self, mock_sdl2, mock_ext):
+        """Test that percentages are resolved to pixels."""
+        mock_renderer = MagicMock()
+        mock_ext.Renderer.return_value = mock_renderer
+        
+        # Window size 800x600
+        win = Window("Test", 800, 600)
+        
+        display_list = [
+            {
+                "type": "rect",
+                "rect": ["10%", "50%", "50%", "25%"], # x=80, y=300, w=400, h=150
+                "color": (255, 0, 0, 255)
+            }
+        ]
+        
+        win.render(display_list)
+        
+        # Check that fill was called with resolved integers
+        # Expected rect: (80, 300, 400, 150)
+        args, _ = mock_renderer.fill.call_args
+        resolved_rect = args[0]
+        
+        self.assertEqual(resolved_rect, (80, 300, 400, 150))
+ 
