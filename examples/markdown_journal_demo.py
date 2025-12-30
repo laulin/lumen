@@ -29,10 +29,11 @@ def main():
     content_layer = VBox(0, 0, "100%", "100%", padding="20px")
     
     # --- HEADER ---
+    # --- HEADER ---
     # Title
-    header_box = VBox(0, 0, "100%", 120, margin=(0, 0, 10, 0))
+    header_box = VBox(0, 0, "100%", "auto", margin=(0, 0, 10, 0))
     
-    title = ResponsiveText(0, 0, "100%", 70, 
+    title = ResponsiveText(0, 0, "100%", "auto", 
         text="**THE PYTHON DAILY**", 
         size=56, 
         color=(20, 20, 20, 255), 
@@ -45,7 +46,7 @@ def main():
     # Top Line
     header_box.add_child(Rectangle(0, 0, "100%", 2, color=(50, 50, 50, 255), margin=(0, 0, 5, 0)))
     
-    date_line = ResponsiveText(0, 0, "100%", 25, 
+    date_line = ResponsiveText(0, 0, "100%", "auto", 
         text="**Vol. 1**   |   New York, [December 30, 2025]{#444444}   |   Price: [Free]{#006600}", 
         size=16, 
         color=(20, 20, 20, 255), 
@@ -61,14 +62,14 @@ def main():
     
     
     # --- MAIN CONTENT (3 Columns) ---
-    columns_layout = HBox(0, 0, "100%", 500)
+    columns_layout = HBox(0, 0, "100%", "auto")
     
     # Column 1 (Left Sidebar)
-    col1 = VBox(0, 0, "25%", "100%", margin=(0, 20, 0, 0)) 
-    col1.add_child(ResponsiveText(0, 0, "100%", 30, text="**LOCAL NEWS**", size=18, color=(100, 0, 0, 255), font=SERIF_BOLD, markup=True))
+    col1 = VBox(0, 0, "25%", "auto", margin=(0, 20, 0, 0)) 
+    col1.add_child(ResponsiveText(0, 0, "100%", "auto", text="**LOCAL NEWS**", size=18, color=(100, 0, 0, 255), font=SERIF_BOLD, markup=True))
     col1.add_child(Rectangle(0, 0, "100%", 1, color=(200, 200, 200, 255), margin=(2, 0, 10, 0)))
     
-    col1.add_child(ResponsiveText(0, 0, "100%", 300, 
+    col1.add_child(ResponsiveText(0, 0, "100%", "auto", 
         text="**Library Update**\n\n"
              "The new [SDL GUI]{#000088} library now supports full [Markdown]{#AA00AA} syntax.\n\n"
              "Citizens report high satisfaction with the new **white paper** look.\n\n"
@@ -77,10 +78,11 @@ def main():
     ))
 
     # Column 2 (Main Story)
-    col2 = VBox(0, 0, "45%", "100%", margin=(0, 20, 0, 20))
-    col2.add_child(ResponsiveText(0, 0, "100%", 120, text="**MARKDOWN REVOLUTION**", size=32, color=(10, 10, 10, 255), font=SERIF_BOLD, align="center", markup=True))
+    col2 = VBox(0, 0, "45%", "auto", margin=(0, 20, 0, 20))
+    # Main Header
+    col2.add_child(ResponsiveText(0, 0, "100%", "auto", text="**MARKDOWN REVOLUTION**", size=32, color=(10, 10, 10, 255), font=SERIF_BOLD, align="center", markup=True))
     
-    col2.add_child(ResponsiveText(0, 0, "100%", 400, 
+    col2.add_child(ResponsiveText(0, 0, "100%", "auto", 
         text="**By A. Developer**\n\n"
              "   It was a sunny afternoon when the decision was made. No more HTML tags. "
              "The people wanted **simplicity**. They wanted `**bold**` asterisks and `[]` brackets.\n\n"
@@ -94,11 +96,11 @@ def main():
     ))
 
     # Column 3 (Right Sidebar)
-    col3 = VBox(0, 0, "25%", "100%", margin=(0, 0, 0, 10))
-    col3.add_child(ResponsiveText(0, 0, "100%", 30, text="**MARKET WATCH**", size=18, color=(0, 80, 0, 255), font=SERIF_BOLD, markup=True))
+    col3 = VBox(0, 0, "25%", "auto", margin=(0, 0, 0, 10))
+    col3.add_child(ResponsiveText(0, 0, "100%", "auto", text="**MARKET WATCH**", size=18, color=(0, 80, 0, 255), font=SERIF_BOLD, markup=True))
     col3.add_child(Rectangle(0, 0, "100%", 1, color=(200, 200, 200, 255), margin=(2, 0, 10, 0)))
     
-    col3.add_child(ResponsiveText(0, 0, "100%", 200, 
+    col3.add_child(ResponsiveText(0, 0, "100%", "auto", 
         text="**Python**: [UP]{#008800} 2.5%\n"
              "**C++**: [STABLE]{#000088}\n"
              "**Rust**: [UP]{#008800} 5.0%\n\n"

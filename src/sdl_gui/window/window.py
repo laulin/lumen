@@ -156,7 +156,13 @@ class Window:
         current_rect = parent_rect
         
         if raw_rect:
-            current_rect = self._resolve_rect(raw_rect, parent_rect)
+            # Handle auto height if present
+            px, py, pw, ph = parent_rect
+            rx = self._resolve_val(raw_rect[0], pw)
+            ry = self._resolve_val(raw_rect[1], ph)
+            rw = self._resolve_val(raw_rect[2], pw)
+            rh = self._measure_item(item, rw, ph)
+            current_rect = (px + rx, py + ry, rw, rh)
 
         # CAPTURE HIT (Register this item for event handling)
         # We store the resolved absolute rect and the item data
@@ -216,7 +222,9 @@ class Window:
             
             # Resolve size (indices 2 and 3)
             child_w = self._resolve_val(child_raw_rect[2], available_width)
-            child_h = self._resolve_val(child_raw_rect[3], available_height)
+            
+            # Use unified measure_item which handles auto check
+            child_h = self._measure_item(child, child_w, available_height)
             
             # Position is determined by cursor + margin
             child_x = cursor_x + margin[3]
@@ -259,7 +267,7 @@ class Window:
             
             child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
             child_w = self._resolve_val(child_raw_rect[2], available_width)
-            child_h = self._resolve_val(child_raw_rect[3], available_height)
+            child_h = self._measure_item(child, child_w, available_height)
             
             child_x = cursor_x + margin[3]
             child_y = cursor_y + margin[0]
@@ -388,6 +396,154 @@ class Window:
         except Exception:
             return
 
+    def _calculate_rich_text_lines(self, item: Dict[str, Any], max_width: int):
+        text = item.get(core.KEY_TEXT, "")
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        
+        # Get font size (requires resolving against something? Height usually... 
+        # If height is auto, we can't resolve font size against height if it depends on it.
+        # But usually font size is absolute or relative to parent height?
+        # Let's assume standard resolve_val call has been done or we do it here.
+        # We need 'size' resolved.
+        # The caller should explicitly resolve font size if needed or we use a fallback context.
+        # For 'auto' height, font size cannot optionally depend on self height.
+        # We'll use 0 as context for size resolution if needed, or pass it in.
+        pass
+
+    def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
+        """Measure the height of an item given the available width."""
+        item_type = item.get(core.KEY_TYPE)
+        raw_rect = item.get(core.KEY_RECT, [0, 0, 0, 0])
+        raw_height = raw_rect[3]
+        
+        # If fixed height, resolve and return (unless it is auto)
+        if raw_height != "auto":
+             return self._resolve_val(raw_height, available_height)
+        
+        # If auto, measure based on type
+        if item_type == core.TYPE_TEXT:
+             return self._measure_text_height(item, available_width, available_height)
+             
+        elif item_type == core.TYPE_VBOX:
+             raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+             pt = self._resolve_val(raw_padding[0], available_height)
+             pb = self._resolve_val(raw_padding[2], available_height)
+             pl = self._resolve_val(raw_padding[3], available_width)
+             pr = self._resolve_val(raw_padding[1], available_width)
+             
+             total_h = pt + pb
+             inner_width = max(0, available_width - pl - pr)
+             inner_height = max(0, available_height - pt - pb)
+             
+             for child in item.get(core.KEY_CHILDREN, []):
+                 raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+                 mt = self._resolve_val(raw_margin[0], inner_height)
+                 mb = self._resolve_val(raw_margin[2], inner_height)
+                 
+                 child_w_raw = child.get(core.KEY_RECT, [0,0,100,0])[2]
+                 child_w = self._resolve_val(child_w_raw, inner_width)
+                 
+                 child_h = self._measure_item(child, child_w, inner_height)
+                 total_h += mt + child_h + mb
+             return total_h
+
+        elif item_type == core.TYPE_HBOX:
+             raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+             pt = self._resolve_val(raw_padding[0], available_height)
+             pb = self._resolve_val(raw_padding[2], available_height)
+             pl = self._resolve_val(raw_padding[3], available_width)
+             pr = self._resolve_val(raw_padding[1], available_width)
+             
+             inner_width = max(0, available_width - pl - pr)
+             inner_height = max(0, available_height - pt - pb)
+             max_child_h = 0
+             
+             for child in item.get(core.KEY_CHILDREN, []):
+                 raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+                 mt = self._resolve_val(raw_margin[0], inner_height)
+                 mb = self._resolve_val(raw_margin[2], inner_height)
+                 
+                 child_w_raw = child.get(core.KEY_RECT, [0,0,100,0])[2]
+                 child_w = self._resolve_val(child_w_raw, inner_width)
+                 
+                 child_h = self._measure_item(child, child_w, inner_height)
+                 max_child_h = max(max_child_h, mt + child_h + mb)
+             return pt + max_child_h + pb
+             
+        return 0
+
+    def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
+        """Measure required height for text item."""
+        if item.get(core.KEY_MARKUP, False):
+            return self._measure_rich_text_height(item, width, parent_height)
+        else:
+            # Placeholder for plain text measurement
+             return 20 # fixed for now or implement plain text measure
+    
+    def _measure_rich_text_height(self, item: Dict[str, Any], width: int, parent_height: int) -> int:
+        text = item.get(core.KEY_TEXT, "")
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        raw_size = item.get(core.KEY_FONT_SIZE, 16)
+        
+        # Resolve size. if parent_height is 0 (likely for auto logic on VBox root?), we might default to absolute.
+        size = self._resolve_val(raw_size, parent_height) if parent_height > 0 else (raw_size if isinstance(raw_size, int) else 16)
+        if size <= 0: size = 16
+
+        parser = markdown.MarkdownParser(default_color=base_color)
+        segments = parser.parse(text)
+        
+        chunked_words = []
+        for seg in segments:
+            lines_in_seg = seg.text.split('\n')
+            for i, line_str in enumerate(lines_in_seg):
+                words = line_str.split(" ")
+                for j, word in enumerate(words):
+                    suffix = " " if j < len(words) - 1 else ""
+                    chunk = word + suffix
+                    if chunk:
+                        chunked_words.append((chunk, seg))
+                if i < len(lines_in_seg) - 1:
+                    chunked_words.append(("\n", seg))
+        
+        lines = []
+        current_line = []
+        current_line_width = 0
+        
+        measure_cache = {}
+        def measure_chunk(text_str, seg):
+            fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+            if not fm: return 0, 0
+            surf = fm.render(text_str)
+            return surf.w, surf.h
+
+        _, line_height = measure_chunk("Tg", segments[0] if segments else None) 
+        if line_height == 0: line_height = size
+
+        for text_chunk, seg in chunked_words:
+            if text_chunk == "\n":
+                lines.append(current_line)
+                current_line = []
+                current_line_width = 0
+                continue
+                
+            w, h = measure_chunk(text_chunk, seg)
+            line_height = max(line_height, h)
+            
+            if current_line and (current_line_width + w > width):
+                lines.append(current_line)
+                current_line = [(text_chunk, seg, w, h)]
+                current_line_width = w
+            else:
+                current_line.append((text_chunk, seg, w, h))
+                current_line_width += w
+                
+        if current_line:
+            lines.append(current_line)
+            
+        return len(lines) * line_height
+
     def _render_rich_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         text = item.get(core.KEY_TEXT, "")
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -401,13 +557,8 @@ class Window:
         parser = markdown.MarkdownParser(default_color=base_color)
         segments = parser.parse(text)
         
-        # Word wrapping with segments
-        # We need to tokenize segments into words but keep style info
-        # Structure: list of (word_text, segment_info)
-        
         chunked_words = []
         for seg in segments:
-            # Handle newlines explicitly
             lines_in_seg = seg.text.split('\n')
             for i, line_str in enumerate(lines_in_seg):
                 words = line_str.split(" ")
@@ -423,36 +574,23 @@ class Window:
                     chunked_words.append(("\n", seg))
         
         # Layout lines
-        lines = [] # List of List[Tuple[str, TextSegment]] (rendering chunks)
+        lines = []
         current_line = []
         current_line_width = 0
         max_width = rect[2]
         
-        # Helper to measure a chunk
         measure_cache = {}
-        def measure_chunk(text_str, seg, font_size_override=None):
-            # We need correct font manager (bold/color doesn't affect metric width usually, but bold might)
-            # Use separate font manager for measurement?
-            # Key part is finding the font manager for this style
-            # Also support custom fonts from markdown? No, primitive defines font.
-            # But we might want bold version of that font.
-            
-            # Use primitive's defined font/size, but check segment for bold override.
-            # NOTE: We partially ignore segment bold if we don't have bold font path mapping.
-            # But the current _get_font_manager handles bold style bit setting if supported.
-            
+        def measure_chunk(text_str, seg):
             fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
             if not fm: return 0, 0
             surf = fm.render(text_str)
             return surf.w, surf.h
 
-        # Estimate line height (max of all used fonts? usually same size)
         _, line_height = measure_chunk("Tg", segments[0] if segments else None) 
-        if line_height == 0: line_height = size # Fallback
+        if line_height == 0: line_height = size
 
         for text_chunk, seg in chunked_words:
             if text_chunk == "\n":
-                # Force new line
                 lines.append(current_line)
                 current_line = []
                 current_line_width = 0
@@ -462,7 +600,6 @@ class Window:
             line_height = max(line_height, h)
             
             if do_wrap and current_line and (current_line_width + w > max_width):
-                # New line
                 lines.append(current_line)
                 current_line = [(text_chunk, seg, w, h)]
                 current_line_width = w
@@ -475,12 +612,16 @@ class Window:
             
         # Render
         current_y = rect[1]
-        start_x = rect[0] # Left align for rich text complexity simplification
+        start_x = rect[0]
         
+        item_align = item.get(core.KEY_ALIGN, "left")
+
         for line in lines:
             line_x = start_x
-            # TODO: Handle alignment (center/right) for rich text lines if needed.
-            # Calculating total width of line is easy (sum of w).
+            if item_align == "center":
+                 # calc line width
+                 lw = sum([chunk[2] for chunk in line])
+                 line_x = start_x + (max_width - lw) // 2
             
             for text_chunk, seg, w, h in line:
                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
@@ -493,34 +634,7 @@ class Window:
                 
                 # Handle Link Hitbox
                 if seg.link_target:
-                    # Register hit area
-                    # Absolute rect of this chunk
                     chunk_rect = (line_x, current_y, surface.w, surface.h)
-                    # We need to add a specialized event listener item?
-                    # Or attach metadata to the current window's hit list?
-                    # The hit list normally stores (rect, item).
-                    # 'item' usually references the widget data.
-                    # We can create a synthetic item for the link.
-                    link_item = {
-                        core.KEY_ID: f"link_{seg.link_target}", # distinct ID if needed
-                        "link_target": seg.link_target,
-                        # We specifically listen for click, but trigger a link_click event.
-                        # Wait, `get_ui_events` translates CLICK to generic click event on ID.
-                        # User wants EVENT_LINK_CLICK with target.
-                        # Let's add a custom event type handling in `get_ui_events` or here?
-                        # `_find_hit` checks for event type support.
-                        # So we need synthetic item to say it supports 'click'.
-                        # Then in `get_ui_events`, if we click it, we check if it's a link?
-                        # Or better: `_find_hit` looks for 'link_click'? No, mouse acts on click.
-                        core.KEY_LISTEN_EVENTS: [core.EVENT_CLICK, core.EVENT_LINK_CLICK] # Hack?
-                    }
-                    # Actually, better:
-                    # We add a tuple to hit list. But hit list expects (rect, dict).
-                    # We add a dict that represents this link.
-                    # When CLICK happens, the generic logic returns this item.
-                    # We need `get_ui_events` to recognize it as a link and emit `link_click` instead of `click`.
-                    # Or we just add specific metadata.
-                    
                     self._hit_list.append((chunk_rect, {
                         "type": "link",
                         "target": seg.link_target,
@@ -530,7 +644,6 @@ class Window:
                 line_x += w
                 
             current_y += line_height
-        # Handle recursive layers? Usually layout items aren't layers, but if they are...
-        # For this scope, let's assume primitives or nested layouts.
+
 
 
