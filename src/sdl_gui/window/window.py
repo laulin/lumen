@@ -68,6 +68,10 @@ class Window:
         ui_events = []
         
         for event in sdl_events:
+            # Handle Quit
+            if event.type == sdl2.SDL_QUIT:
+                ui_events.append({"type": core.EVENT_QUIT})
+
             # Handle Click
             if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
                 mx, my = event.button.x, event.button.y

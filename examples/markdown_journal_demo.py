@@ -139,12 +139,14 @@ def main():
         for event in events:
             if event["type"] == core.EVENT_LINK_CLICK:
                 print(f"User clicked a link: {event['target']}")
+            elif event["type"] == core.EVENT_QUIT:
+                running = False
         
         # Poll SDL events for quit
+        # Note: Window.get_ui_events() already drained events.
+        # But just in case any residuals:
         for event in sdl2.ext.get_events():
-            if event.type == sdl2.SDL_QUIT:
-                running = False
-                break
+             pass # Already handled or consumed.
         
         win.window.refresh()
         sdl2.SDL_Delay(16)

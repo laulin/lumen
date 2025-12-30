@@ -22,9 +22,8 @@ KEY_MARKUP = "markup"
 
 EVENT_CLICK = "click"
 EVENT_LINK_CLICK = "link_click"
+EVENT_QUIT = "quit"
 
 EVENT_HOVER_START = "hover_start"
 EVENT_HOVER_END = "hover_end"
 EVENT_KEY_DOWN = "key_down"
-
-

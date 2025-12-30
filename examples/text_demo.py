@@ -12,6 +12,7 @@ from sdl_gui.primitives.responsive_text import ResponsiveText
 from sdl_gui.primitives.rectangle import Rectangle
 from sdl_gui.layouts.vbox import VBox
 from sdl_gui.layouts.hbox import HBox
+from sdl_gui import core
 
 def main():
     # Increase resolution for better look
@@ -111,12 +112,11 @@ def main():
         ui_events = win.get_ui_events()
         for ui_e in ui_events:
             print(f"UI Event: {ui_e}")
-            
-        events = sdl2.ext.get_events()
-        for event in events:
-            if event.type == sdl2.SDL_QUIT:
+            if ui_e.get("type") == core.EVENT_QUIT:
                 running = False
-                
+            
+        sdl2.SDL_Delay(16)
+                    
     sdl2.ext.quit()
 
 if __name__ == "__main__":

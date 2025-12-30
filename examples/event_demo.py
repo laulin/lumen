@@ -45,7 +45,9 @@ def main():
         # Poll UI Events
         ui_events = win.get_ui_events()
         for event in ui_events:
-            if event["type"] == core.EVENT_CLICK:
+            if event["type"] == core.EVENT_QUIT:
+                running = False
+            elif event["type"] == core.EVENT_CLICK:
                 target = event["target"]
                 print(f"Clicked: {target}")
                 
@@ -56,10 +58,11 @@ def main():
                     print("  -> Bottom Red Rect hit!")
 
         # Handle Quit manually (simple check)
+        # Note: Window.get_ui_events() already drained events.
+        # But just in case any residuals:
         events = sdl2.ext.get_events()
         for event in events:
-             if event.type == sdl2.SDL_QUIT:
-                running = False
+             pass
 
 
                 
