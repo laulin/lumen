@@ -1,5 +1,6 @@
 import sys
 import os
+from pprint import pprint 
 
 # Ensure src is in path
 import sys
@@ -30,18 +31,19 @@ def main():
     sub_layer = Layer("10%", "50%", "80%", "40%")
     rect3 = Rectangle("10%", "10%", "80%", "80%", (0, 0, 255, 255))
     sub_layer.add_child(rect3)
+
+    # Generate display list
+    # Note: In a real app, this would be computed per frame or on change.
+    # But layer.to_data() is efficient enough for this demo structure.
+    display_list = [
+        layer.to_data(),
+        sub_layer.to_data()
+    ]
+    pprint(display_list)
     
     # Main loop
     running = True
     while running:
-        # Generate display list
-        # Note: In a real app, this would be computed per frame or on change.
-        # But layer.to_data() is efficient enough for this demo structure.
-        display_list = [
-            layer.to_data(),
-            sub_layer.to_data()
-        ]
-        
         # Render
         win.render(display_list)
         
