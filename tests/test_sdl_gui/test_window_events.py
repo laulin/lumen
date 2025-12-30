@@ -7,7 +7,7 @@ class TestWindowEvents(unittest.TestCase):
     @patch("sdl_gui.window.window.sdl2.ext")
     @patch("sdl_gui.window.window.sdl2")
     def test_click_event(self, mock_sdl2, mock_ext):
-        """Test that click events are correctly dispatched."""
+        """Test that click events are correctly returned."""
         # Mock renderer & window
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
@@ -17,40 +17,38 @@ class TestWindowEvents(unittest.TestCase):
         
         win = Window("Test", 800, 600)
         
-        # Define callback
-        callback_called = False
-        def on_click():
-            nonlocal callback_called
-            callback_called = True
-            
-        # 1. Render a scene with a clickable rect at (0,0) size 100x100
+        # Mock SDL get_events
+        mock_event = MagicMock()
+        mock_event.type = mock_sdl2.SDL_MOUSEBUTTONDOWN
+        mock_event.button.x = 50
+        mock_event.button.y = 50
+        mock_ext.get_events.return_value = [mock_event]
+        
+        # 1. Render a scene with a clickable rect
         display_list = [
             {
                 "type": "rect",
                 "rect": [0, 0, 100, 100],
                 "color": (255, 0, 0, 255),
-                "events": {
-                    core.EVENT_CLICK: on_click
-                }
+                "id": "my_btn",
+                "listen_events": [core.EVENT_CLICK]
             }
         ]
         win.render(display_list)
         
-        # 2. Simulate Click Event at (50, 50)
-        mock_event = MagicMock()
-        mock_event.type = mock_sdl2.SDL_MOUSEBUTTONDOWN
-        mock_event.button.x = 50
-        mock_event.button.y = 50
+        # 2. Get UI Events
+        ui_events = win.get_ui_events()
         
-        # 3. Dispatch events
-        win.dispatch_events([mock_event])
-        
-        self.assertTrue(callback_called, "Click callback should have been called")
+        # 3. Verify
+        self.assertEqual(len(ui_events), 1)
+        self.assertEqual(ui_events[0]["type"], core.EVENT_CLICK)
+        self.assertEqual(ui_events[0]["target"], "my_btn")
+
 
     @patch("sdl_gui.window.window.sdl2.ext")
     @patch("sdl_gui.window.window.sdl2")
     def test_click_miss(self, mock_sdl2, mock_ext):
-        """Test that clicks outside the rect do not trigger callback."""
+        """Test that clicks outside the rect do not trigger event."""
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
         mock_win_instance = MagicMock()
@@ -59,27 +57,25 @@ class TestWindowEvents(unittest.TestCase):
         
         win = Window("Test", 800, 600)
         
-        callback_called = False
-        def on_click():
-            nonlocal callback_called
-            callback_called = True
+        # Mock SDL get_events (Click at 200, 200)
+        mock_event = MagicMock()
+        mock_event.type = mock_sdl2.SDL_MOUSEBUTTONDOWN
+        mock_event.button.x = 200
+        mock_event.button.y = 200
+        mock_ext.get_events.return_value = [mock_event]
             
         # Rect at (0,0) size 100x100
         display_list = [
             {
                 "type": "rect",
                 "rect": [0, 0, 100, 100],
-                "events": { core.EVENT_CLICK: on_click }
+                "id": "my_btn",
+                "listen_events": [core.EVENT_CLICK]
             }
         ]
         win.render(display_list)
         
-        # Click at (200, 200)
-        mock_event = MagicMock()
-        mock_event.type = mock_sdl2.SDL_MOUSEBUTTONDOWN
-        mock_event.button.x = 200
-        mock_event.button.y = 200
+        ui_events = win.get_ui_events()
         
-        win.dispatch_events([mock_event])
-        
-        self.assertFalse(callback_called, "Callback should NOT be called for miss")
+        self.assertEqual(len(ui_events), 0)
+

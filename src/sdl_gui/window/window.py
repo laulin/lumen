@@ -43,29 +43,42 @@ class Window:
             
         self.renderer.present()
 
-    def dispatch_events(self, events: List[Any]) -> None:
-        """Dispatch SDL events to primitives."""
-        # Process events
-        for event in events:
+    def get_ui_events(self) -> List[Dict[str, Any]]:
+        """
+        Process SDL events and translate them into UI events based on hit tests.
+        Returns a list of high-level UI events (e.g. {'type': 'click', 'target': 'id'}).
+        """
+        sdl_events = sdl2.ext.get_events()
+        ui_events = []
+        
+        for event in sdl_events:
             # Handle Click
             if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
                 mx, my = event.button.x, event.button.y
-                self._handle_click(mx, my)
+                clicked_item = self._find_hit(mx, my)
+                
+                if clicked_item:
+                    item_id = clicked_item.get(core.KEY_ID)
+                    listen_events = clicked_item.get(core.KEY_LISTEN_EVENTS, [])
+                    
+                    if item_id and core.EVENT_CLICK in listen_events:
+                        ui_events.append({
+                            "type": core.EVENT_CLICK,
+                            "target": item_id
+                        })
+                        # Consume event? Assuming yes for top-most match.
 
-            # Handle Hover/Motion if needed (not implemented in this step explicitly but structure is here)
+        return ui_events
 
-    def _handle_click(self, mx: int, my: int) -> None:
-        """Handle click event by checking hit list in reverse order."""
+    def _find_hit(self, mx: int, my: int) -> Dict[str, Any]:
+        """Find the top-most item at coordinates (mx, my)."""
         # Iterate in reverse to find top-most element first
         for rect, item in reversed(self._hit_list):
             x, y, w, h = rect
             if x <= mx < x + w and y <= my < y + h:
-                # HIT!
-                item_events = item.get(core.KEY_EVENTS, {})
-                on_click = item_events.get(core.EVENT_CLICK)
-                if on_click:
-                    on_click()
-                    return # Stop propagation? For now, yes, consume event.
+                return item
+        return None
+
 
     def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
         """Resolve a value (int or percentage string) to pixels."""

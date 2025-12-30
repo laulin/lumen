@@ -7,10 +7,10 @@ class VBox(BasePrimitive):
     
     def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str],
                  padding: tuple = (0, 0, 0, 0), margin: tuple = (0, 0, 0, 0),
-                 events: Dict[str, Any] = None):
-        super().__init__(x, y, width, height, padding, margin, events)
+                 id: str = None,
+                 listen_events: List[str] = None):
+        super().__init__(x, y, width, height, padding, margin, id, listen_events)
         self.children: List[Any] = []
-
 
     def add_child(self, child: Any) -> None:
         """Add a child to the layout."""

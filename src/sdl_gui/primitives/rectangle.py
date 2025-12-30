@@ -9,9 +9,11 @@ class Rectangle(BasePrimitive):
                  color: Tuple[int, int, int, int],
                  padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
                  margin: Tuple[int, int, int, int] = (0, 0, 0, 0),
-                 events: Dict[str, Any] = None):
-        super().__init__(x, y, width, height, padding, margin, events)
+                 id: str = None,
+                 listen_events: List[str] = None):
+        super().__init__(x, y, width, height, padding, margin, id, listen_events)
         self.color = color
+
 
 
     def to_data(self) -> Dict[str, Any]:
