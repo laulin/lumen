@@ -1,5 +1,6 @@
 import sys
 import os
+from pprint import pprint
 import sdl2.ext
 
 # Ensure src is in path
@@ -67,17 +68,17 @@ def main():
     grid = HBox(0, 0, "100%", 300, padding=(20, 20, 20, 20))
     
     # Feature 1
-    col1 = VBox(0, 0, "30%", "100%", margin=(0, 10, 0, 10))
-    c1_title = ResponsiveText(0, 0, "100%", 40, text="<b>Fast</b>", size=20, color=(0, 120, 200, 255), align="center", markup=True)
-    c1_desc = ResponsiveText(0, 0, "100%", 60, text="Optimized <color=#FF0000>rendering</color>.", size=16, color=(60, 60, 60, 255), align="center", markup=True)
+    col1 = VBox(0, 0, "30%", "100%", margin="10px")
+    c1_title = ResponsiveText(0, 0, "100%", 40, text="**Fast**", size=20, color=(0, 120, 200, 255), align="center", markup=True)
+    c1_desc = ResponsiveText(0, 0, "100%", 60, text="Optimized [rendering]{#FF0000}.", size=16, color=(60, 60, 60, 255), align="center", markup=True)
     
     col1.add_child(c1_title)
     col1.add_child(c1_desc)
 
     # Feature 2
-    col2 = VBox(0, 0, "30%", "100%", margin=(0, 10, 0, 10))
-    c2_title = ResponsiveText(0, 0, "100%", 40, text="<b>Flexible</b>", size=20, color=(0, 180, 100, 255), align="center", markup=True)
-    c2_desc = ResponsiveText(0, 0, "100%", 60, text="Nested <link=layouts>layouts</link>.", size=16, color=(60, 60, 60, 255), align="center", markup=True)
+    col2 = VBox(0, 0, "30%", "100%", margin="10px")
+    c2_title = ResponsiveText(0, 0, "100%", 40, text="**Flexible**", size=20, color=(0, 180, 100, 255), align="center", markup=True)
+    c2_desc = ResponsiveText(0, 0, "100%", 60, text="Nested [layouts](layouts).", size=16, color=(60, 60, 60, 255), align="center", markup=True)
     col2.add_child(c2_title)
     col2.add_child(c2_desc)
     
@@ -100,8 +101,10 @@ def main():
     root.add_child(main_layout)   # Absolute pos 0,80
 
     running = True
+    display_list = [root.to_data()]
+    pprint(display_list)
     while running:
-        display_list = [root.to_data()]
+        
         win.render(display_list)
         
         # Get and print UI events

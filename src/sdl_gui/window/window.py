@@ -1,7 +1,8 @@
 import sdl2
 import sdl2.ext
 from typing import List, Dict, Any, Tuple, Union
-from sdl_gui import core, text_utils
+from sdl_gui import core, markdown
+from sdl2 import sdlttf
 
 
 class Window:
@@ -111,12 +112,24 @@ class Window:
         """Resolve a value (int or percentage string) to pixels."""
         if isinstance(val, int):
             return val
-        elif isinstance(val, str) and val.endswith("%"):
-            try:
-                pct = float(val[:-1])
-                return int(parent_len * (pct / 100))
-            except ValueError:
-                return 0
+        elif isinstance(val, str):
+            if val.endswith("%"):
+                try:
+                    pct = float(val[:-1])
+                    return int(parent_len * (pct / 100))
+                except ValueError:
+                    return 0
+            elif val.endswith("px"):
+                try:
+                    return int(val[:-2])
+                except ValueError:
+                    return 0
+            else:
+                 # Try parsing as plain int string
+                 try:
+                     return int(val)
+                 except ValueError:
+                     return 0
         return 0
 
     def _resolve_rect(self, rect_data: List[Any], parent_rect: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
@@ -296,19 +309,8 @@ class Window:
             try:
                 font_manager = sdl2.ext.FontManager(font_path, size=size, color=color)
                 if bold:
-                    # Attempt to set bold style
-                    # Note: pysdl2 FontManager.font is the TTF_Font pointer usually?
-                    # Let's check if we can access it. 
-                    # If implementation details differ, simple color/link works at least.
-                    from sdl2 import sdlttf
-                    # Accessing hidden _font or public font attribute
-                    # pysdl2 0.9.x FontManager stores font in `font` attribute?
-                    # It seems it creates a font per size/style request?
-                    # Actually FontManager is designed to manage multiple fonts? 
-                    # No, pysdl2's FontManager is usually for one font face/size.
-                    # We reuse logic.
                     if hasattr(font_manager, "font"):
-                         sdlttf.TTF_SetFontStyle(font_manager.font, sdlttf.TTF_STYLE_BOLD)
+                        sdlttf.TTF_SetFontStyle(font_manager.font, sdlttf.TTF_STYLE_BOLD)
                 self._font_cache[cache_key] = font_manager
             except Exception:
                 return None
@@ -396,7 +398,8 @@ class Window:
         do_wrap = item.get(core.KEY_WRAP, True)
         
         # Parse segments
-        segments = text_utils.parse_rich_text(text, base_color)
+        parser = markdown.MarkdownParser(default_color=base_color)
+        segments = parser.parse(text)
         
         # Word wrapping with segments
         # We need to tokenize segments into words but keep style info
@@ -404,17 +407,20 @@ class Window:
         
         chunked_words = []
         for seg in segments:
-            # simple split by space, preserving space logic?
-            # text_utils.parse_rich_text likely returns full text in segments.
-            # We split by spaces.
-            words = seg.text.split(" ")
-            for i, word in enumerate(words):
-                # Add space if not last word (or if original text had space?)
-                # Simplified: re-add space after word if it wasn't the last one
-                # Actually, split consumes spaces. We need to handle spacing manually in rendering
-                # or assume single space.
-                suffix = " " if i < len(words) - 1 else ""
-                chunked_words.append((word + suffix, seg))
+            # Handle newlines explicitly
+            lines_in_seg = seg.text.split('\n')
+            for i, line_str in enumerate(lines_in_seg):
+                words = line_str.split(" ")
+                for j, word in enumerate(words):
+                    # Re-add space if it wasn't the last word
+                    suffix = " " if j < len(words) - 1 else ""
+                    chunk = word + suffix
+                    if chunk:
+                        chunked_words.append((chunk, seg))
+                
+                # If we had a split (i < len - 1), it means there was a newline
+                if i < len(lines_in_seg) - 1:
+                    chunked_words.append(("\n", seg))
         
         # Layout lines
         lines = [] # List of List[Tuple[str, TextSegment]] (rendering chunks)
@@ -424,10 +430,17 @@ class Window:
         
         # Helper to measure a chunk
         measure_cache = {}
-        def measure_chunk(text_str, seg):
+        def measure_chunk(text_str, seg, font_size_override=None):
             # We need correct font manager (bold/color doesn't affect metric width usually, but bold might)
             # Use separate font manager for measurement?
             # Key part is finding the font manager for this style
+            # Also support custom fonts from markdown? No, primitive defines font.
+            # But we might want bold version of that font.
+            
+            # Use primitive's defined font/size, but check segment for bold override.
+            # NOTE: We partially ignore segment bold if we don't have bold font path mapping.
+            # But the current _get_font_manager handles bold style bit setting if supported.
+            
             fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
             if not fm: return 0, 0
             surf = fm.render(text_str)
@@ -438,8 +451,13 @@ class Window:
         if line_height == 0: line_height = size # Fallback
 
         for text_chunk, seg in chunked_words:
-            if not text_chunk:
+            if text_chunk == "\n":
+                # Force new line
+                lines.append(current_line)
+                current_line = []
+                current_line_width = 0
                 continue
+                
             w, h = measure_chunk(text_chunk, seg)
             line_height = max(line_height, h)
             
