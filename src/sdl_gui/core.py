@@ -11,6 +11,11 @@ KEY_PADDING = "padding"
 KEY_MARGIN = "margin"
 KEY_ID = "id"
 KEY_LISTEN_EVENTS = "listen_events"
+KEY_TEXT = "text"
+KEY_FONT = "font"
+KEY_FONT_SIZE = "font_size"
+KEY_COLOR = "color"
+KEY_ALIGN = "align"
 
 EVENT_CLICK = "click"
 

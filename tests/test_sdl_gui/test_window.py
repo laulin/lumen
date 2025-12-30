@@ -82,4 +82,52 @@ class TestWindow(unittest.TestCase):
         resolved_rect = args[0]
         
         self.assertEqual(resolved_rect, (80, 300, 400, 150))
+        
+    @patch("sdl_gui.window.window.sdl2.ext")
+    @patch("sdl_gui.window.window.sdl2")
+    def test_render_text(self, mock_sdl2, mock_ext):
+        """Test that text is rendered."""
+        mock_renderer = MagicMock()
+        mock_ext.Renderer.return_value = mock_renderer
+        
+        mock_window = MagicMock()
+        mock_window.size = (800, 600)
+        mock_ext.Window.return_value = mock_window
+        
+        # Mock FontManager
+        mock_font_manager = MagicMock()
+        # Mock surface from render
+        mock_surface = MagicMock()
+        mock_surface.w = 50
+        mock_surface.h = 20
+        mock_font_manager.render.return_value = mock_surface
+        
+        mock_ext.FontManager.return_value = mock_font_manager
+        
+        # Mock Texture
+        mock_texture = MagicMock()
+        mock_ext.Texture.return_value = mock_texture
+        
+        win = Window("Test", 800, 600)
+        
+        display_list = [
+            {
+                "type": "text",
+                "rect": [10, 10, 100, 30],
+                "text": "Hello",
+                "font_size": 16,
+                "color": (0, 0, 0, 255)
+            }
+        ]
+        
+        win.render(display_list)
+        
+        # Verify FontManager created
+        mock_ext.FontManager.assert_called()
+        # Verify render called
+        mock_font_manager.render.assert_called_with("Hello")
+        # Verify Texture created
+        mock_ext.Texture.assert_called_with(mock_renderer, mock_surface)
+        # Verify copy called
+        mock_renderer.copy.assert_called()
  

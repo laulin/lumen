@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Python SDL GUI Library"
 dependencies = [
     "pysdl2>=0.9.16",
+    "pysdl2-dll>=2.32.0",
 ]
 requires-python = ">=3.9"
 

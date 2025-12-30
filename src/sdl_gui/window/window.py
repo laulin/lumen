@@ -9,11 +9,26 @@ class Window:
     
     def __init__(self, title: str, width: int, height: int):
         sdl2.ext.init()
+        try:
+            # Attempt to initialize TTF
+            from sdl2 import sdlttf
+            sdlttf.TTF_Init()
+            self.ttf_available = True
+        except ImportError:
+            print("Warning: SDL_ttf not available. Text rendering disabled.")
+            self.ttf_available = False
+        except Exception as e:
+            print(f"Warning: Failed to initialize SDL_ttf: {e}")
+            self.ttf_available = False
+
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
         self.renderer = sdl2.ext.Renderer(self.window)
         
         # Hit list for event handling (list of tuples: (rect, item_data))
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
+        
+        # Font cache: key -> FontManager
+        self._font_cache: Dict[str, sdl2.ext.FontManager] = {}
 
         self.width = width
         self.height = height
@@ -146,6 +161,9 @@ class Window:
             color = item.get("color", (255, 255, 255, 255))
             if raw_rect: # Only draw if it has a rect
                 self.renderer.fill(current_rect, color)
+        
+        elif item_type == core.TYPE_TEXT:
+            self._render_text(item, current_rect)
 
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a VBox layout."""
@@ -250,6 +268,61 @@ class Window:
         elif item_type == core.TYPE_RECT:
             color = item.get("color", (255, 255, 255, 255))
             self.renderer.fill(rect, color)
+        elif item_type == core.TYPE_TEXT:
+            self._render_text(item, rect)
+
+    def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render text within a given rect."""
+        if not hasattr(self, "ttf_available") or not self.ttf_available:
+            return
+
+        text = item.get(core.KEY_TEXT, "")
+        if not text:
+            return
+            
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        
+        # Resolve size relative to element height
+        raw_size = item.get(core.KEY_FONT_SIZE, 16)
+        size = self._resolve_val(raw_size, rect[3])
+        if size <= 0:
+            size = 1
+            
+        color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        align = item.get(core.KEY_ALIGN, "left")
+        
+        cache_key = f"{font_path}_{size}_{color}"
+        
+        font_manager = self._font_cache.get(cache_key)
+        if not font_manager:
+            try:
+                # Need to initialize ttf if not already? FontManager does it?
+                # FontManager(font_path, size=16, color=WHITE, bg_color=BLACK)
+                font_manager = sdl2.ext.FontManager(font_path, size=size, color=color)
+                self._font_cache[cache_key] = font_manager
+            except Exception as e:
+                # print(f"Failed to load font {font_path}: {e}")
+                return
+
+        try:
+            surface = font_manager.render(text)
+            if not surface:
+                return
+            texture = sdl2.ext.Texture(self.renderer, surface)
+        except Exception:
+            return
+
+        # Position alignment
+        tx, ty = rect[0], rect[1]
+        
+        if align == "center":
+            tx = rect[0] + (rect[2] - surface.w) // 2
+            ty = rect[1] + (rect[3] - surface.h) // 2
+        elif align == "right":
+             tx = rect[0] + rect[2] - surface.w
+             
+        # Just render at computed position
+        self.renderer.copy(texture, dstrect=(tx, ty, surface.w, surface.h))
         # Handle recursive layers? Usually layout items aren't layers, but if they are...
         # For this scope, let's assume primitives or nested layouts.
 
