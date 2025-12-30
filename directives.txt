@@ -1,0 +1,14 @@
+- Modularité : chaque classe dispose de son propre fichier (ex : MaClasse -> ma_classe.py) pour faciliter la navigation et la maintenance.
+- Taille des fonctions : une fonction ne doit pas dépasser 30 lignes de code effectif afin de garantir une responsabilité unique et une lisibilité maximale.
+- Testabilité (TDD) : toutes les classes et fonctions doivent être conçues pour être testables via le Test Driven Development, avec une couverture de code minimale de 80-90%.
+- Injection de dépendances : si des fonctions ou méthodes ne sont pas testables (accès réseau, base de données), il est impératif d'utiliser des injections de dépendances pour permettre le "mocking" durant les tests.
+- Typage statique : utiliser systématiquement les annotations de type (Type Hints) et valider le code avec un outil comme mypy ou pyright.
+- Standards de style : respecter strictement la PEP 8 pour le style de code et utiliser un formateur automatique comme ruff ou black.
+- Structure de projet (src layout) : placer le code source dans un répertoire src/nom_du_package pour éviter les imports accidentels et garantir la validité de l'installation. Les tests doivent être dans un répertoire tests/nom_du_package.
+- Gestion des dépendances : centraliser la configuration et les dépendances dans un fichier pyproject.toml (norme moderne PEP 518/621).
+- Documentation (Docstrings) : chaque module, classe et fonction publique doit comporter une docstring expliquant les arguments, les retours et les exceptions levées.
+- Gestion des erreurs : créer des exceptions personnalisées héritant de la classe de base du projet pour une gestion granulaire et explicite des erreurs métier.
+- Journalisation (Logging) : proscrire l'usage de print au profit du module standard logging, configuré avec différents niveaux (INFO, DEBUG, ERROR).
+- Environnement virtuel : fournir un fichier de verrouillage des dépendances (requirements.txt) pour garantir la reproductibilité d
+- dispose d'une makefile permettant de lancer les tests, le linting et la vérification du typage.
+- tous les tests se font avec unittest.
