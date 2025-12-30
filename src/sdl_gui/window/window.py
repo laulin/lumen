@@ -1,7 +1,8 @@
 import sdl2
 import sdl2.ext
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Union
 from sdl_gui import core
+
 
 class Window:
     """SDL Window wrapper that renders a display list."""
@@ -10,6 +11,10 @@ class Window:
         sdl2.ext.init()
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
         self.renderer = sdl2.ext.Renderer(self.window)
+        
+        # Hit list for event handling (list of tuples: (rect, item_data))
+        self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
+
         self.width = width
         self.height = height
         
@@ -30,23 +35,48 @@ class Window:
         
         root_rect = (0, 0, width, height)
 
+        # Clear hit list for this frame
+        self._hit_list = []
 
-        
         for item in display_list:
             self._render_item(item, root_rect)
             
         self.renderer.present()
-        
-    def _resolve_val(self, val: Any, base: int) -> int:
-        """Resolve a dimension value (int or percentage string)."""
+
+    def dispatch_events(self, events: List[Any]) -> None:
+        """Dispatch SDL events to primitives."""
+        # Process events
+        for event in events:
+            # Handle Click
+            if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
+                mx, my = event.button.x, event.button.y
+                self._handle_click(mx, my)
+
+            # Handle Hover/Motion if needed (not implemented in this step explicitly but structure is here)
+
+    def _handle_click(self, mx: int, my: int) -> None:
+        """Handle click event by checking hit list in reverse order."""
+        # Iterate in reverse to find top-most element first
+        for rect, item in reversed(self._hit_list):
+            x, y, w, h = rect
+            if x <= mx < x + w and y <= my < y + h:
+                # HIT!
+                item_events = item.get(core.KEY_EVENTS, {})
+                on_click = item_events.get(core.EVENT_CLICK)
+                if on_click:
+                    on_click()
+                    return # Stop propagation? For now, yes, consume event.
+
+    def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
+        """Resolve a value (int or percentage string) to pixels."""
         if isinstance(val, int):
             return val
-        if isinstance(val, str) and val.endswith("%"):
+        elif isinstance(val, str) and val.endswith("%"):
             try:
-                pct = float(val[:-1]) / 100.0
-                return int(base * pct)
+                pct = float(val[:-1])
+                return int(parent_len * (pct / 100))
             except ValueError:
-                pass
+                return 0
         return 0
 
     def _resolve_rect(self, rect_data: List[Any], parent_rect: Tuple[int, int, int, int]) -> Tuple[int, int, int, int]:
@@ -74,6 +104,10 @@ class Window:
         
         if raw_rect:
             current_rect = self._resolve_rect(raw_rect, parent_rect)
+
+        # CAPTURE HIT (Register this item for event handling)
+        # We store the resolved absolute rect and the item data
+        self._hit_list.append((current_rect, item))
 
         item_type = item.get(core.KEY_TYPE)
         
