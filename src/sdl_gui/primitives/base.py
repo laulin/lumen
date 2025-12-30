@@ -22,6 +22,7 @@ class BasePrimitive(ABC):
         self.margin = self._normalize_spacing(margin)
         self.id = id
         self.listen_events = listen_events or []
+        self.extra: Dict[str, Any] = {}
 
     def _normalize_spacing(self, val: Union[int, str, Tuple, List]) -> Tuple[Any, Any, Any, Any]:
         """Normalize spacing value to (top, right, bottom, left)."""
@@ -49,6 +50,10 @@ class BasePrimitive(ABC):
             data[core.KEY_ID] = self.id
         if self.listen_events:
             data[core.KEY_LISTEN_EVENTS] = self.listen_events
+        
+        # Merge extra properties (e.g. background color)
+        data.update(self.extra)
+        
         return data
 
 

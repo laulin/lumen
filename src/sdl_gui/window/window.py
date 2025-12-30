@@ -3,6 +3,7 @@ import sdl2.ext
 from typing import List, Dict, Any, Tuple, Union
 from sdl_gui import core, markdown
 from sdl2 import sdlttf
+import ctypes
 
 
 class Window:
@@ -57,6 +58,8 @@ class Window:
         for item in display_list:
             self._render_item(item, root_rect)
             
+        # Reset clipping to be safe
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
         self.renderer.present()
 
     def get_ui_events(self) -> List[Dict[str, Any]]:
@@ -71,6 +74,32 @@ class Window:
             # Handle Quit
             if event.type == sdl2.SDL_QUIT:
                 ui_events.append({"type": core.EVENT_QUIT})
+
+            # Handle Scroll (Mouse Wheel)
+            if event.type == sdl2.SDL_MOUSEWHEEL:
+                # Use current event mouse state if possible, or query global state
+                # In most SDL apps, mouse position is available via SDL_GetMouseState
+                x, y = ctypes.c_int(0), ctypes.c_int(0)
+                sdl2.mouse.SDL_GetMouseState(ctypes.byref(x), ctypes.byref(y))
+                mx, my = x.value, y.value
+                # Find hovered item that listens to SCROLL
+                scroll_target = self._find_hit(mx, my, core.EVENT_SCROLL)
+                if scroll_target:
+                    # Emit SCROLL event
+                    # Delta: event.wheel.y (positive is up/away from user, usually -> scroll up content (view goes up))
+                    # Standard behavior: Wheel UP (pos) -> Move content DOWN (show top). 
+                    # Scroll Y usually represents the top offset.
+                    # So Wheel UP -> decrease scroll_y.
+                    dy = event.wheel.y
+                    
+                    # We send the delta primarily.
+                    ui_events.append({
+                        "type": core.EVENT_SCROLL,
+                        "target": scroll_target.get(core.KEY_ID),
+                        "delta": dy,
+                        # Pass current scroll state if available for convenience
+                        "current_scroll_y": scroll_target.get(core.KEY_SCROLL_Y, 0)
+                    })
 
             # Handle Click
             if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
@@ -160,12 +189,23 @@ class Window:
         current_rect = parent_rect
         
         if raw_rect:
-            # Handle auto height if present
+            # Handle auto height/width if present
             px, py, pw, ph = parent_rect
+            
+            # Resolve Width
+            if raw_rect[2] == "auto":
+                 rw = self._measure_item_width(item, ph) # Width might depend on height? usually not for text but...
+            else:
+                 rw = self._resolve_val(raw_rect[2], pw)
+                 
+            # Resolve Height
+            if raw_rect[3] == "auto":
+                rh = self._measure_item(item, rw, ph)
+            else:
+                rh = self._resolve_val(raw_rect[3], ph)
+
             rx = self._resolve_val(raw_rect[0], pw)
             ry = self._resolve_val(raw_rect[1], ph)
-            rw = self._resolve_val(raw_rect[2], pw)
-            rh = self._measure_item(item, rw, ph)
             current_rect = (px + rx, py + ry, rw, rh)
 
         # CAPTURE HIT (Register this item for event handling)
@@ -178,6 +218,9 @@ class Window:
             children = item.get(core.KEY_CHILDREN, [])
             for child in children:
                 self._render_item(child, current_rect)
+
+        elif item_type == core.TYPE_SCROLLABLE_LAYER:
+            self._render_scrollable_layer(item, current_rect)
 
         elif item_type == core.TYPE_VBOX:
             self._render_vbox(item, current_rect)
@@ -196,6 +239,12 @@ class Window:
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a VBox layout."""
         x, y, w, h = rect
+        
+        # Render background if color is specified
+        bg_color = item.get(core.KEY_COLOR)
+        if bg_color:
+            self.renderer.fill(rect, bg_color)
+
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         # Resolve padding
         pt = self._resolve_val(raw_padding[0], h)
@@ -246,6 +295,12 @@ class Window:
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render an HBox layout."""
         x, y, w, h = rect
+
+        # Render background if color is specified
+        bg_color = item.get(core.KEY_COLOR)
+        if bg_color:
+            self.renderer.fill(rect, bg_color)
+
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         # Resolve padding
         pt = self._resolve_val(raw_padding[0], h)
@@ -270,7 +325,13 @@ class Window:
             margin = (mt, mr, mb, ml)
             
             child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
-            child_w = self._resolve_val(child_raw_rect[2], available_width)
+            
+            # Auto Width support for HBox children
+            if child_raw_rect[2] == "auto":
+                 child_w = self._measure_item_width(child, available_height)
+            else:
+                 child_w = self._resolve_val(child_raw_rect[2], available_width)
+            
             child_h = self._measure_item(child, child_w, available_height)
             
             child_x = cursor_x + margin[3]
@@ -295,6 +356,49 @@ class Window:
             self.renderer.fill(rect, color)
         elif item_type == core.TYPE_TEXT:
             self._render_text(item, rect)
+
+    def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render a Scrollable Layer with clipping."""
+        x, y, w, h = rect
+        scroll_y = item.get(core.KEY_SCROLL_Y, 0)
+        
+        # Set Clip Rect to this layer bounds
+        # SDL2 expects proper SDL_Rect structure or 4 args? checking pysdl2.
+        # pysdl2 renderer.clip = (...) property wrapper does SDL_RenderSetClipRect
+        # But we access the raw sdl renderer if needed, or use pysdl2 wrapper property if available?
+        # self.renderer is sdl2.ext.Renderer
+        # It doesn't seem to expose clip rect easily via high level API in older versions, 
+        # but modern pysdl2 might.
+        # Let's try direct SDL call to be safe and robust.
+        
+        clip_rect = sdl2.SDL_Rect(x, y, w, h)
+        # Use direct SDL2 function, passing the renderer pointer
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
+        
+        # Children are rendered with dy = -scroll_y
+        # Their coordinates are typically relative to this layer (0,0 based?) or absolute logic?
+        # In current recursion, we pass 'rect' as parent_rect.
+        # If children are positioned relative to parent:
+        # standard resolution does: px + child_x.
+        # So child absolute X = x + child_x.
+        # We need absolute Y = y + child_y - scroll_y.
+        
+        # We can simulate this by passing a virtual parent rect that is shifted up.
+        # virtual_parent_rect = (x, y - scroll_y, w, h)
+        # Wait, height/width context for percentages should remain true 'w', 'h'.
+        # But position context should be shifted.
+        
+        # _resolve_rect uses the parent rect for both position base and size context.
+        # If we shift Y, size context (h) remains correct.
+        
+        virtual_parent_rect = (x, y - scroll_y, w, h)
+
+        children = item.get(core.KEY_CHILDREN, [])
+        for child in children:
+            self._render_item(child, virtual_parent_rect)
+            
+        # Unset Clip Rect (or pop) - Setting to None disables clipping
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
     def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render text within a given rect with optional wrapping and ellipsis."""
@@ -477,6 +581,41 @@ class Window:
              
         return 0
 
+    def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        """Measure the width of an item."""
+        item_type = item.get(core.KEY_TYPE)
+        if item_type == core.TYPE_TEXT:
+             return self._measure_text_width(item, parent_height)
+        return 0
+    
+    def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        text = item.get(core.KEY_TEXT, "")
+        if not text: return 0
+        
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        raw_size = item.get(core.KEY_FONT_SIZE, 16)
+        size = self._resolve_val(raw_size, parent_height) if parent_height > 0 else (raw_size if isinstance(raw_size, int) else 16)
+        if size <= 0: size = 16
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        
+        markup = item.get(core.KEY_MARKUP, False)
+        if markup:
+             parser = markdown.MarkdownParser(default_color=base_color)
+             segments = parser.parse(text)
+             total_w = 0
+             for seg in segments:
+                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+                 if fm:
+                     surf = fm.render(seg.text) 
+                     total_w += surf.w
+             return total_w
+        else:
+             fm = self._get_font_manager(font_path, size, base_color)
+             if fm:
+                 surf = fm.render(text)
+                 return surf.w
+        return 0
+
     def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
         """Measure required height for text item."""
         if item.get(core.KEY_MARKUP, False):
@@ -648,6 +787,41 @@ class Window:
                 line_x += w
                 
             current_y += line_height
+
+    def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        """Measure the width of an item."""
+        item_type = item.get(core.KEY_TYPE)
+        if item_type == core.TYPE_TEXT:
+             return self._measure_text_width(item, parent_height)
+        return 0
+    
+    def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        text = item.get(core.KEY_TEXT, "")
+        if not text: return 0
+        
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        raw_size = item.get(core.KEY_FONT_SIZE, 16)
+        size = self._resolve_val(raw_size, parent_height) if parent_height > 0 else (raw_size if isinstance(raw_size, int) else 16)
+        if size <= 0: size = 16
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        
+        markup = item.get(core.KEY_MARKUP, False)
+        if markup:
+             parser = markdown.MarkdownParser(default_color=base_color)
+             segments = parser.parse(text)
+             total_w = 0
+             for seg in segments:
+                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+                 if fm:
+                     surf = fm.render(seg.text) 
+                     total_w += surf.w
+             return total_w
+        else:
+             fm = self._get_font_manager(font_path, size, base_color)
+             if fm:
+                 surf = fm.render(text)
+                 return surf.w
+        return 0
 
 
 
