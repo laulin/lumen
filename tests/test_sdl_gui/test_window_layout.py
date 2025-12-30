@@ -11,7 +11,13 @@ class TestWindowLayout(unittest.TestCase):
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
         
+        # Mock window size
+        mock_window = MagicMock()
+        mock_window.size = (100, 300)
+        mock_ext.Window.return_value = mock_window
+        
         win = Window("Test", 100, 300)
+
         
         # VBox at (0,0) with size 100x300
         # Child 1: Height 50 -> should be at y=0, h=50
@@ -51,7 +57,13 @@ class TestWindowLayout(unittest.TestCase):
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
         
+        # Mock window size
+        mock_window = MagicMock()
+        mock_window.size = (100, 300)
+        mock_ext.Window.return_value = mock_window
+        
         win = Window("Test", 100, 300)
+
         
         # VBox padding: 10
         # Child 1 margin: 5

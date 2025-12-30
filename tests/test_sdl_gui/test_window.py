@@ -20,7 +20,13 @@ class TestWindow(unittest.TestCase):
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
         
+        # Mock window size
+        mock_window = MagicMock()
+        mock_window.size = (800, 600)
+        mock_ext.Window.return_value = mock_window
+        
         win = Window("Test", 800, 600)
+
         
         # Test data
         display_list = [
@@ -51,8 +57,14 @@ class TestWindow(unittest.TestCase):
         mock_renderer = MagicMock()
         mock_ext.Renderer.return_value = mock_renderer
         
+        # Mock window size
+        mock_window = MagicMock()
+        mock_window.size = (800, 600)
+        mock_ext.Window.return_value = mock_window
+        
         # Window size 800x600
         win = Window("Test", 800, 600)
+
         
         display_list = [
             {

@@ -22,11 +22,15 @@ class Window:
         self.renderer.clear()
         
         # Determine current window size (in case of resize)
-        # For now using initial size or updated size if we tracked resize events, 
-        # but simplistic approach: use stored size. 
-        # Ideally we'd get window.size, but let's stick to simple property.
+        # Use dynamic size from SDL window
+        width, height = self.window.size
         
-        root_rect = (0, 0, self.width, self.height)
+        # Sync logical size to avoid scaling artifacts
+        self.renderer.logical_size = (width, height)
+        
+        root_rect = (0, 0, width, height)
+
+
         
         for item in display_list:
             self._render_item(item, root_rect)
