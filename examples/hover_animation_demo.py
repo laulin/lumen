@@ -125,6 +125,7 @@ def main():
 
         running = True
         last_time = time.time()
+        print("Starting main loop...")
         
         while running:
             current_time = time.time()
@@ -156,7 +157,7 @@ def main():
                 display_list.append(label.to_data())
             
             win.render(display_list)
-            sdl2.SDL_Delay(16)
+            #sdl2.SDL_Delay(16)
 
     sdl2.ext.quit()
 
