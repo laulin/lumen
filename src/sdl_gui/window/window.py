@@ -5,13 +5,14 @@ from typing import List, Dict, Any, Tuple, Union, Callable
 from sdl_gui import core, markdown
 from sdl2 import sdlttf
 import ctypes
+import time
 from sdl_gui import context
 
 
 class Window:
     """SDL Window wrapper that renders a display list."""
     
-    def __init__(self, title: str, width: int, height: int):
+    def __init__(self, title: str, width: int, height: int, debug: bool = False):
         sdl2.ext.init()
         try:
             # Attempt to initialize TTF
@@ -44,9 +45,18 @@ class Window:
         
         # Text Texture Cache: (font_path, size, color, text) -> Texture
         self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
+        
+        # Render Queue for Batching: list of SDL_Rect with same color
+        self._render_queue: List[sdl2.SDL_Rect] = []
+        self._render_queue_color: Tuple[int, int, int, int] = None
+
 
         self.width = width
         self.height = height
+        self.debug = debug
+        self.fps_start = time.time()
+        self.frame_count = 0
+        self.current_fps = 0
         
     def __enter__(self):
         """Enter context: return self and potentially set self as a context root."""
@@ -112,8 +122,36 @@ class Window:
         for item in display_list:
             self._render_item(item, root_rect)
             
+        # Flush any remaining items
+        self._flush_render_queue()
+            
         # Reset clipping to be safe
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+        
+        # Debug FPS
+        if self.debug:
+            self.frame_count += 1
+            now = time.time()
+            if now - self.fps_start >= 1.0:
+                self.current_fps = self.frame_count
+                self.frame_count = 0
+                self.fps_start = now
+            
+            # Simple direct text rendering for debug overlay
+            # Use raw sdlgfx or text primitive logic?
+            # Let's use a quick text item injected into render cycle or direct call?
+            # Direct call to internal _render_text is safer to overlay on top.
+            debug_item = {
+                core.KEY_TYPE: core.TYPE_TEXT,
+                core.KEY_TEXT: f"FPS: {self.current_fps}",
+                core.KEY_COLOR: (0, 255, 0, 255),
+                core.KEY_FONT_SIZE: 16
+            }
+            # Avoid infinite caching of unique FPS strings if possible, or accept cache churn?
+            # Actually, FPS numbers change every second, so 60-100 variants per minute. It's fine.
+            self._render_text(debug_item, (10, 10, 100, 20))
+            self._flush_render_queue()
+
         self.renderer.present()
 
     def get_ui_events(self) -> List[Dict[str, Any]]:
@@ -195,6 +233,25 @@ class Window:
 
 
 
+    def _flush_render_queue(self):
+        """Draw all queued rectangles with the current batch color."""
+        if not self._render_queue:
+            return
+            
+        # SDL2 requires array of SDL_Rect
+        count = len(self._render_queue)
+        rects_array = (sdl2.SDL_Rect * count)(*self._render_queue)
+        
+        # Set color
+        r, g, b, a = self._render_queue_color
+        sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
+        
+        # Draw all
+        sdl2.SDL_RenderFillRects(self.renderer.sdlrenderer, rects_array, count)
+        
+        # Clear
+        self._render_queue = []
+        self._render_queue_color = None
     def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
         """Resolve a value (int or percentage string) to pixels."""
         if isinstance(val, int):
@@ -314,10 +371,22 @@ class Window:
         
         # Draw filled rectangle
         if radius > 0:
+            self._flush_render_queue() # Draw before rounded
             sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, 
                                    self._to_sdlgfx_color(color))
         else:
-            self.renderer.fill(rect, color)
+             # Basic Rect - Attempt Batching
+             r, g, b, a = color
+             
+             # If color matches current batch, add to queue
+             if self._render_queue_color == color:
+                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
+             else:
+                 # Flush previous batch
+                 self._flush_render_queue()
+                 # Start new batch
+                 self._render_queue_color = color
+                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
         
         # Draw border if needed
         if border_width > 0 and border_color:
@@ -325,11 +394,13 @@ class Window:
             
             # Simple border
             if radius <= 0:
+                self._flush_render_queue() # Draw queued fills first
                 b_color = sdl2.ext.Color(*border_color)
                 for i in range(border_width):
                      self.renderer.draw_rect((x+i, y+i, w-2*i, h-2*i), b_color)
             else:
                 # Rounded border
+                self._flush_render_queue() # Draw queued fills first
                 gfx_b_color = self._to_sdlgfx_color(border_color)
                 for i in range(border_width):
                      bx, by = x + i, y + i
@@ -455,6 +526,7 @@ class Window:
         elif item_type == core.TYPE_TEXT:
             self._render_text(item, rect)
         elif item_type == core.TYPE_IMAGE:
+            self._flush_render_queue() # Ensure Z-order
             self._render_image(item, rect)
 
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
@@ -473,6 +545,7 @@ class Window:
         
         clip_rect = sdl2.SDL_Rect(x, y, w, h)
         # Use direct SDL2 function, passing the renderer pointer
+        self._flush_render_queue() # Flush before changing clip state
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
         
         # Children are rendered with dy = -scroll_y
@@ -498,10 +571,12 @@ class Window:
             self._render_item(child, virtual_parent_rect)
             
         # Unset Clip Rect (or pop) - Setting to None disables clipping
+        self._flush_render_queue() # Flush inside clipped region before unsetting
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
     def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render text within a given rect with optional wrapping and ellipsis."""
+        self._flush_render_queue() # Textures must be drawn after background rects
         if not hasattr(self, "ttf_available") or not self.ttf_available:
             return
 

@@ -91,7 +91,7 @@ class AnimatedItem:
 
 def main():
     width, height = 800, 400
-    with Window("Advanced Hover Animations", width, height) as win:
+    with Window("Advanced Hover Animations", width, height, debug=True) as win:
         
         items = []
         
