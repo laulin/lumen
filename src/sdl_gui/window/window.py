@@ -25,8 +25,8 @@ class Window:
             self.ttf_available = False
 
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
-        # Enable Hardware Acceleration and VSync for smoother rendering
-        self.renderer = sdl2.ext.Renderer(self.window, flags=sdl2.SDL_RENDERER_ACCELERATED | sdl2.SDL_RENDERER_PRESENTVSYNC)
+        # Enable Hardware Acceleration for smoother rendering
+        self.renderer = sdl2.ext.Renderer(self.window, flags=sdl2.SDL_RENDERER_ACCELERATED)
         
         # Hit list for event handling (list of tuples: (rect, item_data))
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
