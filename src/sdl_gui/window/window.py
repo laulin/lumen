@@ -43,7 +43,57 @@ class Window:
         self.width = width
         self.height = height
         
-    def show(self) -> None:
+    def __enter__(self):
+        """Enter context: return self and potentially set self as a context root."""
+        # We can push self as a parent if Primitive expects a generic parent interface, 
+        # but Window is not a Container in the Primitive sense (it holds a display list).
+        # But we want `with Window(...) as w:`
+        # and inside we might do `with Layer(...)`.
+        # Windows don't usually serve as implicit parents for Primitives directly in this checking logic 
+        # unless we want `Rect()` inside `with Window()` to be added to Window's display list automatically?
+        # The Window renders a display_list passed to `render`.
+        # If we want implicit adding, Window needs `add_child`.
+        # Let's support it!
+        from sdl_gui import context
+        context.push_parent(self)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        from sdl_gui import context
+        context.pop_parent()
+
+    def add_child(self, child: Any) -> None:
+        """Allow adding children directly to window (e.g. for implicit context)."""
+        # Window usually doesn't store a list of children to render persistently unless we change its model.
+        # Currently it takes `display_list` in `render`.
+        # If we want a retained mode style usage with implicit context:
+        # We might need to store them in a temporary list or changes `Window` to be retained mode.
+        # The user request asks for "with XXX() as x:".
+        # If they do:
+        # with Window(...) as w:
+        #    with Layer(...) as l:
+        #        ...
+        #    w.render([l.to_data()])
+        # Then Window context is just for scope.
+        # BUT if they want `with Window...: Rect...` to work, Window needs to store it.
+        # Given existing architecture seems to be `window.render(display_list)`, 
+        # making Window a persistent container might be a larger change.
+        # However, for the context manager to be useful as "sugar", it should probably build a list?
+        # Let's add a `children` list to Window that can be passed to render implicitly or explicitly?
+        # For now, let's keep it simple: Just enable the syntax. 
+        # If later we want `w.add_child`, we can add it.
+        # Wait, if I push Window to stack, primitives will try to call `add_child`.
+        # So I MUST implement `add_child`.
+        if not hasattr(self, 'root_children'):
+            self.root_children = []
+        self.root_children.append(child)
+        
+    def get_root_display_list(self) -> List[Dict[str, Any]]:
+        """Helper to get data from root children if used in retained mode way."""
+        if hasattr(self, 'root_children'):
+            return [child.to_data() for child in self.root_children]
+        return []
+
         """Show the window."""
         self.window.show()
 

@@ -1,8 +1,8 @@
 from typing import Dict, Any, List, Union
 from sdl_gui import core
-from sdl_gui.primitives.base import BasePrimitive
+from sdl_gui.primitives.container import Container
 
-class HBox(BasePrimitive):
+class HBox(Container):
     """Horizontal Box Layout."""
     
     def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str],

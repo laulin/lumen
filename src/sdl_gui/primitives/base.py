@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Union, Tuple, List
-from sdl_gui import core
+from sdl_gui import core, context
 
 class BasePrimitive(ABC):
     """Abstract base class for all display primitives."""
@@ -23,6 +23,19 @@ class BasePrimitive(ABC):
         self.id = id
         self.listen_events = listen_events or []
         self.extra: Dict[str, Any] = {}
+        
+        # Implicit parenting
+        parent = context.get_current_parent()
+        if parent and hasattr(parent, 'add_child'):
+            parent.add_child(self)
+
+    def __enter__(self):
+        """Default enter for primitives that are not containers: just return self."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Default exit: do nothing."""
+        pass
 
     def _normalize_spacing(self, val: Union[int, str, Tuple, List]) -> Tuple[Any, Any, Any, Any]:
         """Normalize spacing value to (top, right, bottom, left)."""
@@ -64,7 +77,9 @@ class BasePrimitive(ABC):
         'border_width', 
         'border_color', 
         'color', 
-        'background_color' # Maps to color
+        'background_color', # Maps to color
+        'margin',
+        'padding'
     }
 
     def __getattr__(self, name: str):
@@ -90,6 +105,7 @@ class BasePrimitive(ABC):
                         val = args # tuple
                     
                     self.extra[key] = val
+                    return self
                     
                 return setter
             else:
