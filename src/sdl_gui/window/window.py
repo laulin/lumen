@@ -7,6 +7,7 @@ from sdl2 import sdlttf
 import ctypes
 import time
 from sdl_gui import context
+from sdl2 import sdlimage as img
 
 
 class Window:
@@ -725,6 +726,7 @@ class Window:
     def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
         """Measure the height of an item given the available width."""
         item_type = item.get(core.KEY_TYPE)
+        print(f"DEBUG: Measuring TYPE={item_type}")
         
         # Check Cache
         item_id = item.get(core.KEY_ID)
@@ -733,15 +735,16 @@ class Window:
              if cache_key in self._measurement_cache:
                   return self._measurement_cache[cache_key]
 
-        raw_rect = item.get(core.KEY_RECT, [0, 0, 0, 0])
-        raw_height = raw_rect[3]
-        
-        # If fixed height, resolve and return (unless it is auto)
-        if raw_height != "auto":
-             h = self._resolve_val(raw_height, available_height)
-             # Even fixed height might want caching if we want to avoid resolve_val? No, resolve_val is cheap.
-             # But consistency suggests we don't need to cache fixed height.
-             return h
+        if core.KEY_RECT in item:
+            raw_rect = item[core.KEY_RECT]
+            raw_height = raw_rect[3]
+            
+            # If fixed height, resolve and return (unless it is auto)
+            # Optimization: If type is specific (like VBox), maybe we still want to re-measure content?
+            # Usually strict setting overrides content.
+            if raw_height != "auto":
+                 h = self._resolve_val(raw_height, available_height)
+                 return h
         
         # If auto, measure based on type
         if item_type == core.TYPE_TEXT:
@@ -802,14 +805,31 @@ class Window:
              return total_h
 
         elif item_type == core.TYPE_IMAGE:
-             h = self._measure_image_height(item, available_width)
+             # Check for explicit width
+             raw_w = item.get(core.KEY_RECT, [0,0,0,0])[2]
+             if raw_w == "auto":
+                 target_w = self._measure_item_width(item, 0)
+             else:
+                 target_w = self._resolve_val(raw_w, available_width)
+            
+             h = self._measure_image_height(item, target_w)
              if item_id: self._measurement_cache[cache_key] = h
              return h
 
         # Cache result
         if item_id:
-             self._measurement_cache[cache_key] = 0
+             raw_h = item.get(core.KEY_RECT, [0,0,0,0])[3]
+             fallback_h = 0
+             if raw_h != "auto":
+                 fallback_h = self._resolve_val(raw_h, available_height if available_height > 0 else 0)
              
+             self._measurement_cache[cache_key] = fallback_h
+             return fallback_h
+              
+        raw_h = item.get(core.KEY_RECT, [0,0,0,0])[3]
+        if raw_h != "auto":
+             return self._resolve_val(raw_h, available_height if available_height > 0 else 0)
+        
         return 0
 
     def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
@@ -860,9 +880,12 @@ class Window:
              
         # Image auto-width?
         if item_type == core.TYPE_IMAGE:
-             # Basic image support: get source texture width?
-             # For now return 0 or implement if needed. 
-             pass
+             # Basic image support: get source texture width
+             src = item.get(core.KEY_SOURCE)
+             if src:
+                 surface = self._load_image_source(src)
+                 if surface:
+                     return surface.w
              
         return 0
     
