@@ -17,6 +17,11 @@ class TestWindowRichText(unittest.TestCase):
         mock_fm.render.return_value = MagicMock(w=10, h=10)
         mock_ext.FontManager.return_value = mock_fm
         
+        # Mock Texture to have a size property (width, height)
+        mock_texture = MagicMock()
+        mock_texture.size = (10, 10)
+        mock_ext.Texture.return_value = mock_texture
+        
         win = Window("Test", 100, 100)
         win.ttf_available = True
         
