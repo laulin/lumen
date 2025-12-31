@@ -47,131 +47,140 @@ def create_post_card(index):
     comments = random.randint(0, 500)
     
     # Main Card Container (Dark Theme)
-    # Using 'color' property on VBox (newly supported)
-    card = VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 0, 10, 0))
-    card.set_background_color(26, 26, 27, 25) # Reddit Dark Card BG
-    card.set_radius(10)
-    card.set_border_width(1)
-    card.set_border_color(52, 53, 54, 55)
-    
-    # --- META HEADER ---
-    meta_box = HBox(0, 0, "100%", 30, padding=(10, 10, 5, 20))
-    # Subreddit
-    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"**{sub_name}**", size=12, color=sub_color, markup=True))
-    # Dot
-    meta_box.add_child(ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(129, 131, 132, 255), align="center"))
-    # User
-    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(129, 131, 132, 255)))
-    # Time
-    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(129, 131, 132, 255)))
-    
-    card.add_child(meta_box)
-    
-    # --- TITLE ---
-    title_box = VBox(0, 0, "100%", "auto", padding=(10, 20, 5, 20))
-    # Title Color: Light Gray D7DADC
-    title_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(215, 218, 220, 255), markup=True, wrap=True))
-    card.add_child(title_box)
-    
-    # --- BODY ---
-    body_box = VBox(0, 0, "100%", "auto", padding=(5, 20, 10, 20))
-    # Body Color: Slightly darker gray
-    body_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(215, 218, 220, 255), wrap=True))
-    card.add_child(body_box)
-    
-    # --- ACTION BAR ---
-    action_box = HBox(0, 0, "100%", 35, padding=(10, 20, 10, 20))
-    
-    # Upvotes (Orangeish)
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text="[▲]", size=14, color=(255, 69, 0, 255), markup=True))
-    vote_str = f"{upvotes/1000:.1f}k" if upvotes > 1000 else str(upvotes)
-    # Text Color
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(215, 218, 220, 255)))
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(113, 147, 255, 255), markup=True))
-    
-    # Spacing
-    action_box.add_child(Rectangle(0, 0, 30, "100%", (0,0,0,0)))
-    
-    # Comments
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(129, 131, 132, 255), markup=True))
-    
-    card.add_child(action_box)
+    with VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 0, 10, 0)) as card:
+        card.set_background_color(35, 35, 35, 255) # Neutral Grey
+        card.set_radius(10)
+        card.set_border_width(1)
+        card.set_border_color(60, 60, 60, 255)
+        
+        # --- META HEADER ---
+        with HBox(0, 0, "100%", 30, padding=(10, 10, 5, 20)) as meta_box:
+            # Subreddit
+            ResponsiveText(0, 0, "auto", "100%", text=f"**{sub_name}**", size=12, color=sub_color, markup=True)
+            # Dot
+            ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(129, 131, 132, 255), align="center")
+            # User
+            ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(129, 131, 132, 255))
+            # Time
+            ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(129, 131, 132, 255))
+        
+        # --- TITLE ---
+        with VBox(0, 0, "100%", "auto", padding=(10, 20, 5, 20)) as title_box:
+            # Title Color: Light Gray D7DADC
+            ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(215, 218, 220, 255), markup=True, wrap=True)
+        
+        # --- BODY ---
+        with VBox(0, 0, "100%", "auto", padding=(5, 20, 10, 20)) as body_box:
+            # Body Color: Slightly darker gray
+            ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(215, 218, 220, 255), wrap=True)
+        
+        # --- ACTION BAR ---
+        with HBox(0, 0, "100%", 35, padding=(10, 20, 10, 20)) as action_box:
+            
+            # Upvotes (Orangeish)
+            ResponsiveText(0, 0, "auto", "100%", text="[▲]", size=14, color=(255, 69, 0, 255), markup=True)
+            vote_str = f"{upvotes/1000:.1f}k" if upvotes > 1000 else str(upvotes)
+            # Text Color
+            ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(215, 218, 220, 255))
+            ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(113, 147, 255, 255), markup=True)
+            
+            # Spacing
+            Rectangle(0, 0, 30, "100%", color=(0,0,0,0))
+            
+            # Comments
+            ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(129, 131, 132, 255), markup=True)
     
     return card
 
 def main():
-    win = Window("Optix Reddit Clone", 500, 800)
-    
-    # --- HEADER ---
-    # Fixed at top
-    header = HBox(0, 0, "100%", 50, padding=(0, 0, 0, 0))
-    header.set_background_color(26, 26, 27, 255) # Header BG
-    
-    logo_box = HBox(0, 0, "auto", "100%", padding=(15, 10, 15, 10))
-    logo_box.add_child(ResponsiveText(0, 0, "auto", "auto", text="**reddit**", size=24, color=(255, 69, 0, 255), markup=True))
-    logo_box.add_child(ResponsiveText(0, 0, 10, "auto", text=" ", size=24))
-    logo_box.add_child(ResponsiveText(0, 0, "auto", "auto", text="demo", size=24, color=(255, 255, 255, 255))) # White text
-    header.add_child(logo_box)
-    
-    # Search bar simulation (Spacer + Rect)
-    header.add_child(Rectangle(0, 0, 20, "100%", (0,0,0,0))) # Spacer
-    search_bar = Rectangle(0, 0, 150, 30, (39, 40, 41, 255), radius=15, margin=(10, 0, 10, 0)) # Darker search bar
-    header.add_child(search_bar)
-    
-    # --- SCROLLABLE CONTENT ---
-    # Starts at y=50
-    scroll_layer = ScrollableLayer(0, 50, "100%", 750, id="feed", listen_events=[core.EVENT_SCROLL])
-    
-    # Fix layout cutoff: Use padding on content VBox rather than margins on children if possible, 
-    # or ensure child width + margin doesn't exceed 100%. 
-    # Current card uses margin=(10,0,10,0) (top/bottom) and padding=(0,0,0,0).
-    # Width is "100%".
-    # If we put padding on content_vbox, we effectively inset the content.
-    content_vbox = VBox(0, 0, "100%", "auto", padding=(0, 10, 0, 10)) # Padding L/R 10
-    scroll_layer.add_child(content_vbox)
-    
-    # Add an empty spacer at top of feed to separate from header slightly more if needed
-    content_vbox.add_child(Rectangle(0, 0, "100%", 10, (0,0,0,0)))
-
-    # Initial Posts
-    for i in range(10):
-        content_vbox.add_child(create_post_card(i))
-
-    running = True
-    current_scroll_y = 0
-    item_count = 10
-    
-    while running:
-        scroll_layer.scroll_y = current_scroll_y
+    # Implicit API context usage
+    with Window("Optix Reddit Clone", 500, 800) as win:
         
-        display_list = [
-            Rectangle(0, 0, "100%", "100%", (3, 3, 3, 255)).to_data(), # Global BG (Deep Black)
-            scroll_layer.to_data(),
-            header.to_data(), # Header on top
-            Rectangle(0, 49, "100%", 1, (52, 53, 54, 255)).to_data() # Header Border
-        ]
-        
-        win.render(display_list)
-        
-        ui_events = win.get_ui_events()
-        for event in ui_events:
-            if event["type"] == core.EVENT_QUIT:
-                running = False
+        # --- HEADER ---
+        with HBox(0, 0, "100%", 50, padding=(0, 15, 0, 15)) as header:
+            header.set_background_color(26, 26, 27, 255)
+            
+            # 1. Logo Section
+            with HBox(0, 0, "auto", "100%") as logo_box:
+                # Icon Circle
+                with HBox(0, 0, 32, 32, margin=(9, 5, 9, 0)) as icon_box:
+                    Rectangle(0, 0, 32, 32, color=(255, 69, 0, 255), radius=16)
                 
-            elif event["type"] == core.EVENT_SCROLL:
-                if event["target"] == "feed":
-                    delta = event["delta"]
-                    current_scroll_y -= delta * 40 # Sensitivity
-                    if current_scroll_y < 0: current_scroll_y = 0
-                    
-                    approx_height = item_count * 200 # rough estimate per card
-                    if current_scroll_y > approx_height - 1000:
-                         print("Fetching more posts...")
-                         for _ in range(5):
-                             item_count += 1
-                             content_vbox.add_child(create_post_card(item_count))
+                ResponsiveText(0, 0, "auto", "auto", text="**reddit**", size=20, color=(255, 255, 255, 255), markup=True, margin=(13, 0, 0, 0))
+
+            # 2. Search Bar
+            # Flexible spacer
+            # Reduced width to fit
+            with HBox(0, 0, 120, 36, margin=(7, 10, 7, 10)) as search_box:
+                search_box.set_background_color(39, 40, 41, 255)
+                search_box.set_radius(18)
+                
+                # Search Icon & Placeholder
+                ResponsiveText(0, 0, "auto", "auto", text="🔍", size=14, color=(129, 131, 132, 255), margin=(8, 0, 0, 10))
+                ResponsiveText(0, 0, "auto", "auto", text="Search", size=14, color=(129, 131, 132, 255), margin=(9, 0, 0, 5))
+
+            # 3. Actions (Right side)
+            # Login / Signup
+            with HBox(0, 0, "auto", "100%") as actions_box:
+                
+                # Log In Button
+                with HBox(0, 0, 70, 32, margin=(9, 5, 9, 0)) as login_btn:
+                    login_btn.set_border_width(1)
+                    login_btn.set_border_color(215, 218, 220, 255)
+                    login_btn.set_radius(16)
+                    ResponsiveText(0, 0, 70, "auto", text="Log In", size=12, color=(215, 218, 220, 255), align="center", margin=(9, 0, 0, 0))
+
+                # Sign Up Button
+                with HBox(0, 0, 70, 32, margin=(9, 0, 9, 5)) as signup_btn:
+                    signup_btn.set_background_color(215, 218, 220, 255)
+                    signup_btn.set_radius(16)
+                    # Text inside needs to be black
+                    ResponsiveText(0, 0, 70, "auto", text="Sign Up", size=12, color=(26, 26, 27, 255), align="center", margin=(9, 0, 0, 0))
+
+        # --- CONTENT LAYER ---
+        with ScrollableLayer(0, 50, "100%", 750, id="feed", listen_events=[core.EVENT_SCROLL]) as scroll_layer:
+            with VBox(0, 0, "100%", "auto", padding=(0, 10, 0, 10)) as content_vbox:
+                # Initial Posts
+                for i in range(10):
+                   create_post_card(i) # Implicitly adds to content_vbox
+
+        # Render loop
+        running = True
+        current_scroll_y = 0
+        item_count = 10
         
-        sdl2.SDL_Delay(16)
+        while running:
+            scroll_layer.scroll_y = current_scroll_y
+            
+            # Manual Display List Assembly (for stacking Layers)
+            # We construct the list explicitly to control Z-order (Painter's Algorithm)
+            display_list = [
+                Rectangle(0, 0, "100%", "100%", color=(3, 3, 3, 255)).to_data(), # Global BG (Deep Black)
+                scroll_layer.to_data(), # Content first
+                header.to_data(), # Header on top
+                Rectangle(0, 49, "100%", 1, color=(52, 53, 54, 255)).to_data() # Header Border
+            ]
+            
+            win.render(display_list)
+            
+            ui_events = win.get_ui_events()
+            for event in ui_events:
+                if event["type"] == core.EVENT_QUIT:
+                    running = False
+                    
+                elif event["type"] == core.EVENT_SCROLL:
+                    if event["target"] == "feed":
+                        delta = event["delta"]
+                        current_scroll_y -= delta * 40 # Sensitivity
+                        if current_scroll_y < 0: current_scroll_y = 0
+                        
+                        approx_height = item_count * 200 
+                        if current_scroll_y > approx_height - 1000:
+                             for _ in range(5):
+                                 item_count += 1
+                                 create_post_card(item_count) 
+                                 content_vbox.add_child(create_post_card(item_count))
+
         
     sdl2.ext.quit()
 

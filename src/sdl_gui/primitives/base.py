@@ -97,13 +97,21 @@ class BasePrimitive(ABC):
                     # Map Alias
                     if prop_name == 'background_color':
                         key = 'color'
-                    
+
                     # Determine value
                     if len(args) == 1:
                         val = args[0]
                     else:
                         val = args # tuple
                     
+                    # Normalize Color
+                    if key in ('color', 'background_color', 'border_color'):
+                         if isinstance(val, (tuple, list)):
+                             if len(val) == 3:
+                                 val = (val[0], val[1], val[2], 255)
+                             elif len(val) == 4:
+                                 val = tuple(val)
+                     
                     self.extra[key] = val
                     return self
                     

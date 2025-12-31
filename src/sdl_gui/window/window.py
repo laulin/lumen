@@ -94,8 +94,20 @@ class Window:
             return [child.to_data() for child in self.root_children]
         return []
 
+    def show(self):
         """Show the window."""
         self.window.show()
+
+    def save_screenshot(self, filename: str) -> None:
+        """Save the current window content to a BMP file."""
+        w, h = self.window.size
+        surface = sdl2.SDL_CreateRGBSurface(0, w, h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
+        sdl2.SDL_RenderReadPixels(self.renderer.sdlrenderer, None, 
+                                  sdl2.SDL_PIXELFORMAT_ARGB8888, 
+                                  surface.contents.pixels, 
+                                  surface.contents.pitch)
+        sdl2.SDL_SaveBMP(surface, filename.encode('utf-8'))
+        sdl2.SDL_FreeSurface(surface)
 
     def render(self, display_list: List[Dict[str, Any]]) -> None:
         """Render the display list."""
@@ -295,11 +307,21 @@ class Window:
         elif item_type == core.TYPE_IMAGE:
             self._render_image(item, current_rect)
 
+    def _to_sdlgfx_color(self, color: Tuple[int, int, int, int]) -> int:
+        """Convert RGBA tuple to ABGR packed integer for Little Endian sdlgfx."""
+        r, g, b, a = color
+        # 0xAABBGGRR
+        return (a << 24) | (b << 16) | (g << 8) | r
+
     def _draw_rect_primitive(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], raw_rect_check: Any = True) -> None:
         """Helper to draw a rectangle with optional radius and border."""
         if not raw_rect_check: return
         
-        color = item.get("color", (255, 255, 255, 255))
+        # Ensure 4-component tuple (default fallback)
+        color = item.get("color")
+        if not color: color = (255, 255, 255, 255)
+        elif len(color) == 3: color = (*color, 255)
+        
         radius = item.get(core.KEY_RADIUS, 0)
         border_color = item.get(core.KEY_BORDER_COLOR)
         border_width = item.get(core.KEY_BORDER_WIDTH, 0)
@@ -309,32 +331,31 @@ class Window:
         # Draw filled rectangle
         if radius > 0:
             sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, 
-                                   sdl2.ext.Color(color[0], color[1], color[2], color[3]))
+                                   self._to_sdlgfx_color(color))
         else:
             self.renderer.fill(rect, color)
         
         # Draw border if needed
         if border_width > 0 and border_color:
-            b_color = sdl2.ext.Color(border_color[0], border_color[1], border_color[2], border_color[3])
+            if len(border_color) == 3: border_color = (*border_color, 255)
             
-            for i in range(border_width):
-                bx = x + i
-                by = y + i
-                bw = w - (2 * i)
-                bh = h - (2 * i)
-                
-                if bw <= 0 or bh <= 0:
-                    break
-                    
-                current_radius = radius - i if radius > 0 else 0
-                if current_radius < 0: current_radius = 0
-                    
-                if current_radius > 0:
-                     sdlgfx.roundedRectangleColor(self.renderer.sdlrenderer, 
-                                                 bx, by, bx + bw - 1, by + bh - 1, 
-                                                 current_radius, b_color)
-                else:
-                     self.renderer.draw_rect((bx, by, bw, bh), b_color)
+            # Simple border
+            if radius <= 0:
+                b_color = sdl2.ext.Color(*border_color)
+                for i in range(border_width):
+                     self.renderer.draw_rect((x+i, y+i, w-2*i, h-2*i), b_color)
+            else:
+                # Rounded border
+                gfx_b_color = self._to_sdlgfx_color(border_color)
+                for i in range(border_width):
+                     bx, by = x + i, y + i
+                     bw, bh = w - 2 * i, h - 2 * i
+                     if bw <= 0 or bh <= 0: break
+                     current_radius = max(0, radius - i)
+                     if current_radius > 0:
+                         sdlgfx.roundedRectangleColor(self.renderer.sdlrenderer, bx, by, bx+bw-1, by+bh-1, current_radius, gfx_b_color)
+                     else:
+                         self.renderer.draw_rect((bx, by, bw, bh), sdl2.ext.Color(*border_color))
 
 
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
@@ -710,12 +731,28 @@ class Window:
                 if child_w_raw == "auto":
                     child_w = self._measure_item_width(child, parent_height)
                 else:
-                    child_w = self._resolve_val(child_w_raw, 0) # Can't resolve % width of child inside auto parent easily
+                    child_w = self._resolve_val(child_w_raw, 0)
                 
                 total_w += ml + child_w + mr
             
             return total_w
 
+        # Generic Fallback (Rect, Image, etc)
+        # If they have a resolution strategy in _measure_item, we might duplicate logic or simplify
+        # For Width, primitive usually has fixed width or % width.
+        # If fixed, we resolve it. If %, returns 0 (correct for intrinsic).
+        # If "auto", primitives usually don't support auto width unless Text/Image.
+        
+        raw_w = item.get(core.KEY_RECT, [0,0,0,0])[2]
+        if raw_w != "auto":
+             return self._resolve_val(raw_w, 0)
+             
+        # Image auto-width?
+        if item_type == core.TYPE_IMAGE:
+             # Basic image support: get source texture width?
+             # For now return 0 or implement if needed. 
+             pass
+             
         return 0
     
     def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
@@ -918,42 +955,7 @@ class Window:
                 
             current_y += line_height
 
-    def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
-        """Measure the width of an item."""
-        item_type = item.get(core.KEY_TYPE)
-        if item_type == core.TYPE_TEXT:
-             return self._measure_text_width(item, parent_height)
-        elif item_type == core.TYPE_IMAGE:
-             return self._measure_image_width(item, parent_height)
-        return 0
-    
-    def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
-        text = item.get(core.KEY_TEXT, "")
-        if not text: return 0
-        
-        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        raw_size = item.get(core.KEY_FONT_SIZE, 16)
-        size = self._resolve_val(raw_size, parent_height) if parent_height > 0 else (raw_size if isinstance(raw_size, int) else 16)
-        if size <= 0: size = 16
-        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
-        
-        markup = item.get(core.KEY_MARKUP, False)
-        if markup:
-             parser = markdown.MarkdownParser(default_color=base_color)
-             segments = parser.parse(text)
-             total_w = 0
-             for seg in segments:
-                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
-                 if fm:
-                     surf = fm.render(seg.text) 
-                     total_w += surf.w
-             return total_w
-        else:
-             fm = self._get_font_manager(font_path, size, base_color)
-             if fm:
-                 surf = fm.render(text)
-                 return surf.w
-        return 0
+
 
 
 
