@@ -1,6 +1,6 @@
 import sdl2
 import sdl2.ext
-from typing import List, Dict, Any, Tuple, Union
+from typing import List, Dict, Any, Tuple, Union, Callable
 from sdl_gui import core, markdown
 from sdl2 import sdlttf
 import ctypes
@@ -31,6 +31,13 @@ class Window:
         
         # Font cache: key -> FontManager
         self._font_cache: Dict[str, sdl2.ext.FontManager] = {}
+
+        # Image cache: key -> Texture
+        # We need to keep surfaces or textures?
+        # Ideally textures for rendering.
+        # But if we recreate renderer, textures are invalid?
+        # The renderer is created once in __init__.
+        self._image_cache: Dict[str, sdl2.ext.Texture] = {}
 
         self.width = width
         self.height = height
@@ -236,6 +243,9 @@ class Window:
         elif item_type == core.TYPE_TEXT:
             self._render_text(item, current_rect)
 
+        elif item_type == core.TYPE_IMAGE:
+            self._render_image(item, current_rect)
+
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a VBox layout."""
         x, y, w, h = rect
@@ -356,6 +366,8 @@ class Window:
             self.renderer.fill(rect, color)
         elif item_type == core.TYPE_TEXT:
             self._render_text(item, rect)
+        elif item_type == core.TYPE_IMAGE:
+            self._render_image(item, rect)
 
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a Scrollable Layer with clipping."""
@@ -557,6 +569,7 @@ class Window:
              return total_h
 
         elif item_type == core.TYPE_HBOX:
+             # ... hbox logic ...
              raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
              pt = self._resolve_val(raw_padding[0], available_height)
              pb = self._resolve_val(raw_padding[2], available_height)
@@ -578,7 +591,10 @@ class Window:
                  child_h = self._measure_item(child, child_w, inner_height)
                  max_child_h = max(max_child_h, mt + child_h + mb)
              return pt + max_child_h + pb
-             
+
+        elif item_type == core.TYPE_IMAGE:
+             return self._measure_image_height(item, available_width)
+
         return 0
 
     def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
@@ -793,6 +809,8 @@ class Window:
         item_type = item.get(core.KEY_TYPE)
         if item_type == core.TYPE_TEXT:
              return self._measure_text_width(item, parent_height)
+        elif item_type == core.TYPE_IMAGE:
+             return self._measure_image_width(item, parent_height)
         return 0
     
     def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
@@ -825,3 +843,131 @@ class Window:
 
 
 
+
+    def _render_image(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render an image within the rect."""
+        source = item.get(core.KEY_SOURCE)
+        if not source:
+            return
+
+        scale_mode = item.get(core.KEY_SCALE_MODE, "fit")
+        # Try to get existing texture from cache if we have an ID
+        # For non-id items, we might warn or just cache by source hash if possible, 
+        # but for bytes/callable without ID it's hard to cache efficiently.
+        item_id = item.get(core.KEY_ID)
+        cache_key = item_id if item_id else str(id(source))
+        
+        texture = self._image_cache.get(cache_key)
+        
+        if not texture:
+            surface = self._load_image_source(source)
+            if surface:
+                texture = sdl2.ext.Texture(self.renderer, surface)
+                sdl2.SDL_FreeSurface(surface)
+                self._image_cache[cache_key] = texture
+        
+        if not texture:
+            return 
+            
+        # Determine destination rect based on scale_mode
+        img_w, img_h = texture.size
+        dest_x, dest_y, dest_w, dest_h = rect
+        
+        final_x, final_y, final_w, final_h = dest_x, dest_y, dest_w, dest_h
+        
+        if scale_mode == "fit":
+             # Scale down to fit within rect maintaining aspect ratio
+             if img_w > 0 and img_h > 0:
+                 scale = min(dest_w / img_w, dest_h / img_h)
+                 final_w = int(img_w * scale)
+                 final_h = int(img_h * scale)
+                 # Center
+                 final_x = dest_x + (dest_w - final_w) // 2
+                 final_y = dest_y + (dest_h - final_h) // 2
+             
+        elif scale_mode == "fill":
+             # Stretch to fill
+             pass
+             
+        elif scale_mode == "center":
+             final_w = img_w
+             final_h = img_h
+             final_x = dest_x + (dest_w - img_w) // 2
+             final_y = dest_y + (dest_h - img_h) // 2
+             
+        # Render
+        self.renderer.copy(texture, dstrect=(final_x, final_y, final_w, final_h))
+
+
+    def _load_image_source(self, source: Union[str, bytes, Callable]) -> Any:
+        """Load image surface from source."""
+        try:
+             import sdl2.sdlimage as img
+        except ImportError:
+             print("SDL_image not available.")
+             return None
+
+        surface = None
+        
+        if isinstance(source, str):
+            # File path
+            surface = img.IMG_Load(source.encode('utf-8'))
+            
+        elif isinstance(source, (bytes, bytearray)):
+            # Memory
+            rw = sdl2.rwops.rw_from_object(source)
+            surface = img.IMG_Load_RW(rw, 0)
+            
+        elif callable(source):
+            # Procedural
+            res = source()
+            if isinstance(res, sdl2.SDL_Surface):
+                 surface = res
+            elif hasattr(res, "contents") and isinstance(res.contents, sdl2.SDL_Surface):
+                 surface = res
+            elif isinstance(res, (bytes, bytearray)):
+                 return self._load_image_source(res)
+        
+        return surface
+    def _measure_image_height(self, item: Dict[str, Any], width: int) -> int:
+        source = item.get(core.KEY_SOURCE)
+        if not source: return 0
+        id_key = item.get(core.KEY_ID)
+        cache_key = id_key if id_key else str(id(source))
+        
+        texture = self._image_cache.get(cache_key)
+        if not texture:
+             surface = self._load_image_source(source)
+             if surface:
+                 texture = sdl2.ext.Texture(self.renderer, surface)
+                 sdl2.SDL_FreeSurface(surface)
+                 self._image_cache[cache_key] = texture
+        
+        if not texture: return 0
+        
+        img_w, img_h = texture.size
+        # Calculate height preserving aspect ratio
+        if img_w == 0: return 0
+        scale = width / img_w
+        return int(img_h * scale)
+    
+    def _measure_image_width(self, item: Dict[str, Any], height: int) -> int:
+        source = item.get(core.KEY_SOURCE)
+        if not source: return 0
+        id_key = item.get(core.KEY_ID)
+        cache_key = id_key if id_key else str(id(source))
+        
+        texture = self._image_cache.get(cache_key)
+        if not texture:
+             surface = self._load_image_source(source)
+             if surface:
+                 texture = sdl2.ext.Texture(self.renderer, surface)
+                 sdl2.SDL_FreeSurface(surface)
+                 self._image_cache[cache_key] = texture
+        
+        if not texture: return 0
+        
+        img_w, img_h = texture.size
+        if img_h == 0: return 0
+        scale = height / img_h
+        return int(img_w * scale)

@@ -12,4 +12,4 @@
 - Environnement virtuel : fournir un fichier de verrouillage des dépendances (requirements.txt) pour garantir la reproductibilité d
 - dispose d'une makefile permettant de lancer les tests, le linting et la vérification du typage.
 - tous les tests se font avec unittest.
-- des exemples de code sont fournis dans un répertoire examples. Le nom des exemples doivent être représentatif de leur fonctionnalité. Les exemples doivent être clairs et explicites.
+- des exemples de code sont fournis dans un répertoire examples. Le nom des exemples doivent être représentatif de leur fonctionnalité. Les exemples doivent être clairs et explicites. Il faut que les exemples donnent envie d'utiliser le logiciel.
