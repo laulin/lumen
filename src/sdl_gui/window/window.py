@@ -1,5 +1,6 @@
 import sdl2
 import sdl2.ext
+from sdl2 import sdlgfx
 from typing import List, Dict, Any, Tuple, Union, Callable
 from sdl_gui import core, markdown
 from sdl2 import sdlttf
@@ -236,9 +237,7 @@ class Window:
             self._render_hbox(item, current_rect)
 
         elif item_type == core.TYPE_RECT:
-            color = item.get("color", (255, 255, 255, 255))
-            if raw_rect: # Only draw if it has a rect
-                self.renderer.fill(current_rect, color)
+            self._draw_rect_primitive(item, current_rect, raw_rect)
         
         elif item_type == core.TYPE_TEXT:
             self._render_text(item, current_rect)
@@ -246,14 +245,58 @@ class Window:
         elif item_type == core.TYPE_IMAGE:
             self._render_image(item, current_rect)
 
+    def _draw_rect_primitive(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], raw_rect_check: Any = True) -> None:
+        """Helper to draw a rectangle with optional radius and border."""
+        if not raw_rect_check: return
+        
+        color = item.get("color", (255, 255, 255, 255))
+        radius = item.get(core.KEY_RADIUS, 0)
+        border_color = item.get(core.KEY_BORDER_COLOR)
+        border_width = item.get(core.KEY_BORDER_WIDTH, 0)
+
+        x, y, w, h = rect
+        
+        # Draw filled rectangle
+        if radius > 0:
+            sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, 
+                                   sdl2.ext.Color(color[0], color[1], color[2], color[3]))
+        else:
+            self.renderer.fill(rect, color)
+        
+        # Draw border if needed
+        if border_width > 0 and border_color:
+            b_color = sdl2.ext.Color(border_color[0], border_color[1], border_color[2], border_color[3])
+            
+            for i in range(border_width):
+                bx = x + i
+                by = y + i
+                bw = w - (2 * i)
+                bh = h - (2 * i)
+                
+                if bw <= 0 or bh <= 0:
+                    break
+                    
+                current_radius = radius - i if radius > 0 else 0
+                if current_radius < 0: current_radius = 0
+                    
+                if current_radius > 0:
+                     sdlgfx.roundedRectangleColor(self.renderer.sdlrenderer, 
+                                                 bx, by, bx + bw - 1, by + bh - 1, 
+                                                 current_radius, b_color)
+                else:
+                     self.renderer.draw_rect((bx, by, bw, bh), b_color)
+
+
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render a VBox layout."""
         x, y, w, h = rect
         
         # Render background if color is specified
-        bg_color = item.get(core.KEY_COLOR)
-        if bg_color:
-            self.renderer.fill(rect, bg_color)
+        if item.get(core.KEY_COLOR):
+             # Reuse the primitive drawer, treating this vbox as a rect for background purposes
+             # We create a temporary item dict/context or just pass item? 
+             # item has 'color', 'radius' etc (via extra in python obj, merged in to_data)
+             self._draw_rect_primitive(item, rect)
 
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         # Resolve padding
@@ -266,8 +309,8 @@ class Window:
         children = item.get(core.KEY_CHILDREN, [])
         
         # Cursor info
-        cursor_x = x + pl # left
-        cursor_y = y + pt # top
+        cursor_x = x + pl
+        cursor_y = y + pt
         available_width = w - pr - pl
         available_height = h - pt - pb
         
@@ -280,36 +323,26 @@ class Window:
             margin = (mt, mr, mb, ml)
             
             # Resolve child dimensions
-            # Width/Height are resolved against available space in VBox
             child_raw_rect = child.get(core.KEY_RECT, [0,0,0,0])
-            
-            # Resolve size (indices 2 and 3)
             child_w = self._resolve_val(child_raw_rect[2], available_width)
-            
-            # Use unified measure_item which handles auto check
             child_h = self._measure_item(child, child_w, available_height)
             
-            # Position is determined by cursor + margin
             child_x = cursor_x + margin[3]
             child_y = cursor_y + margin[0]
             
-            # Construct resolved rect for child
             child_rect = (child_x, child_y, child_w, child_h)
             
-            # Render child
             self._render_element_at(child, child_rect)
             
-            # Advance cursor
             cursor_y += margin[0] + child_h + margin[2]
 
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render an HBox layout."""
         x, y, w, h = rect
 
-        # Render background if color is specified
-        bg_color = item.get(core.KEY_COLOR)
-        if bg_color:
-            self.renderer.fill(rect, bg_color)
+        # Render background
+        if item.get(core.KEY_COLOR):
+             self._draw_rect_primitive(item, rect)
 
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         # Resolve padding
@@ -602,6 +635,37 @@ class Window:
         item_type = item.get(core.KEY_TYPE)
         if item_type == core.TYPE_TEXT:
              return self._measure_text_width(item, parent_height)
+        
+        elif item_type == core.TYPE_HBOX:
+            # Measure children
+            raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+            # Padding resolution requires knowing parent width usually, but here we are measuring intrinsic width.
+            # We can't resolve relative padding easily without context. Assume 0 for strict intrinsic measurement? 
+            # Or pass a context? For auto-width, we usually want minimal fit.
+            # Let's assume pixel padding or minor dependency.
+            # _resolve_val returns 0 if % and no parent_len.
+            
+            pl = self._resolve_val(raw_padding[3], 0)
+            pr = self._resolve_val(raw_padding[1], 0)
+            
+            total_w = pl + pr
+            children = item.get(core.KEY_CHILDREN, [])
+            for child in children:
+                raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+                ml = self._resolve_val(raw_margin[3], 0)
+                mr = self._resolve_val(raw_margin[1], 0)
+                
+                child_w_raw = child.get(core.KEY_RECT, [0,0,"auto",0])[2]
+                
+                if child_w_raw == "auto":
+                    child_w = self._measure_item_width(child, parent_height)
+                else:
+                    child_w = self._resolve_val(child_w_raw, 0) # Can't resolve % width of child inside auto parent easily
+                
+                total_w += ml + child_w + mr
+            
+            return total_w
+
         return 0
     
     def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:

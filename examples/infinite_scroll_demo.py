@@ -46,49 +46,54 @@ def create_post_card(index):
     upvotes = random.randint(0, 5000)
     comments = random.randint(0, 500)
     
-    # Main Card Container (White background, shadow/border effect simulation)
+    # Main Card Container (Dark Theme)
     # Using 'color' property on VBox (newly supported)
-    card = VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 10, 10, 10))
-    card.extra[core.KEY_COLOR] = (255, 255, 255, 255) # White BG
+    card = VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 0, 10, 0))
+    card.set_background_color(26, 26, 27, 25) # Reddit Dark Card BG
+    card.set_radius(10)
+    card.set_border_width(1)
+    card.set_border_color(52, 53, 54, 55)
     
     # --- META HEADER ---
     meta_box = HBox(0, 0, "100%", 30, padding=(10, 10, 5, 20))
     # Subreddit
     meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"**{sub_name}**", size=12, color=sub_color, markup=True))
     # Dot
-    meta_box.add_child(ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(150, 150, 150, 255), align="center"))
+    meta_box.add_child(ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(129, 131, 132, 255), align="center"))
     # User
-    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(120, 120, 120, 255)))
+    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(129, 131, 132, 255)))
     # Time
-    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(120, 120, 120, 255)))
+    meta_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(129, 131, 132, 255)))
     
     card.add_child(meta_box)
     
     # --- TITLE ---
     title_box = VBox(0, 0, "100%", "auto", padding=(10, 20, 5, 20))
-    title_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(20, 20, 20, 255), markup=True, wrap=True))
+    # Title Color: Light Gray D7DADC
+    title_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(215, 218, 220, 255), markup=True, wrap=True))
     card.add_child(title_box)
     
     # --- BODY ---
     body_box = VBox(0, 0, "100%", "auto", padding=(5, 20, 10, 20))
-    body_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(50, 50, 50, 255), wrap=True))
+    # Body Color: Slightly darker gray
+    body_box.add_child(ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(215, 218, 220, 255), wrap=True))
     card.add_child(body_box)
     
     # --- ACTION BAR ---
     action_box = HBox(0, 0, "100%", 35, padding=(10, 20, 10, 20))
-    # Gray background for action bar? Optional.
     
     # Upvotes (Orangeish)
     action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text="[▲]", size=14, color=(255, 69, 0, 255), markup=True))
     vote_str = f"{upvotes/1000:.1f}k" if upvotes > 1000 else str(upvotes)
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(20, 20, 20, 255)))
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(148, 148, 255, 255), markup=True))
+    # Text Color
+    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(215, 218, 220, 255)))
+    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(113, 147, 255, 255), markup=True))
     
     # Spacing
     action_box.add_child(Rectangle(0, 0, 30, "100%", (0,0,0,0)))
     
     # Comments
-    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(100, 100, 100, 255), markup=True))
+    action_box.add_child(ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(129, 131, 132, 255), markup=True))
     
     card.add_child(action_box)
     
@@ -100,24 +105,29 @@ def main():
     # --- HEADER ---
     # Fixed at top
     header = HBox(0, 0, "100%", 50, padding=(0, 0, 0, 0))
-    header.extra[core.KEY_COLOR] = (255, 255, 255, 255) # White BG
+    header.set_background_color(26, 26, 27, 255) # Header BG
     
     logo_box = HBox(0, 0, "auto", "100%", padding=(15, 10, 15, 10))
     logo_box.add_child(ResponsiveText(0, 0, "auto", "auto", text="**reddit**", size=24, color=(255, 69, 0, 255), markup=True))
     logo_box.add_child(ResponsiveText(0, 0, 10, "auto", text=" ", size=24))
-    logo_box.add_child(ResponsiveText(0, 0, "auto", "auto", text="demo", size=24, color=(0, 0, 0, 255)))
+    logo_box.add_child(ResponsiveText(0, 0, "auto", "auto", text="demo", size=24, color=(255, 255, 255, 255))) # White text
     header.add_child(logo_box)
     
     # Search bar simulation (Spacer + Rect)
     header.add_child(Rectangle(0, 0, 20, "100%", (0,0,0,0))) # Spacer
-    search_bar = Rectangle(0, 0, 150, 30, (240, 240, 240, 255), margin=(10, 0, 10, 0))
+    search_bar = Rectangle(0, 0, 150, 30, (39, 40, 41, 255), radius=15, margin=(10, 0, 10, 0)) # Darker search bar
     header.add_child(search_bar)
     
     # --- SCROLLABLE CONTENT ---
     # Starts at y=50
     scroll_layer = ScrollableLayer(0, 50, "100%", 750, id="feed", listen_events=[core.EVENT_SCROLL])
     
-    content_vbox = VBox(0, 0, "100%", "auto")
+    # Fix layout cutoff: Use padding on content VBox rather than margins on children if possible, 
+    # or ensure child width + margin doesn't exceed 100%. 
+    # Current card uses margin=(10,0,10,0) (top/bottom) and padding=(0,0,0,0).
+    # Width is "100%".
+    # If we put padding on content_vbox, we effectively inset the content.
+    content_vbox = VBox(0, 0, "100%", "auto", padding=(0, 10, 0, 10)) # Padding L/R 10
     scroll_layer.add_child(content_vbox)
     
     # Add an empty spacer at top of feed to separate from header slightly more if needed
@@ -135,10 +145,10 @@ def main():
         scroll_layer.scroll_y = current_scroll_y
         
         display_list = [
-            Rectangle(0, 0, "100%", "100%", (218, 224, 230, 255)).to_data(), # Global BG (Reddit Gray)
+            Rectangle(0, 0, "100%", "100%", (3, 3, 3, 255)).to_data(), # Global BG (Deep Black)
             scroll_layer.to_data(),
             header.to_data(), # Header on top
-            Rectangle(0, 49, "100%", 1, (200, 200, 200, 255)).to_data() # Header Border
+            Rectangle(0, 49, "100%", 1, (52, 53, 54, 255)).to_data() # Header Border
         ]
         
         win.render(display_list)

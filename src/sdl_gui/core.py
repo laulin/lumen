@@ -26,6 +26,10 @@ KEY_MARKUP = "markup"
 KEY_SCROLL_Y = "scroll_y"
 KEY_CONTENT_HEIGHT = "content_height"
 
+KEY_RADIUS = "radius"
+KEY_BORDER_COLOR = "border_color"
+KEY_BORDER_WIDTH = "border_width"
+
 EVENT_CLICK = "click"
 EVENT_LINK_CLICK = "link_click"
 EVENT_QUIT = "quit"

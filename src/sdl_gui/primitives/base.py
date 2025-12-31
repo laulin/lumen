@@ -56,4 +56,46 @@ class BasePrimitive(ABC):
         
         return data
 
+    
+    # Registry of allowed style properties to validation/mapping logic if needed
+    # For now, just a set of allowed names.
+    ALLOWED_PROPERTIES = {
+        'radius', 
+        'border_width', 
+        'border_color', 
+        'color', 
+        'background_color' # Maps to color
+    }
+
+    def __getattr__(self, name: str):
+        """
+        Generic setter mechanism.
+        Intercepts calls to set_xxx and validates xxx against ALLOWED_PROPERTIES.
+        """
+        if name.startswith("set_"):
+            prop_name = name[4:]
+            
+            if prop_name in self.ALLOWED_PROPERTIES:
+                # Helper to handle the actual setting
+                def setter(*args):
+                    key = prop_name
+                    # Map Alias
+                    if prop_name == 'background_color':
+                        key = 'color'
+                    
+                    # Determine value
+                    if len(args) == 1:
+                        val = args[0]
+                    else:
+                        val = args # tuple
+                    
+                    self.extra[key] = val
+                    
+                return setter
+            else:
+                 raise AttributeError(f"Property '{prop_name}' is not allowed or does not exist.")
+        
+        # Default behavior for other attributes
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
 
