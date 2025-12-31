@@ -25,7 +25,8 @@ class Window:
             self.ttf_available = False
 
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
-        self.renderer = sdl2.ext.Renderer(self.window)
+        # Enable Hardware Acceleration and VSync for smoother rendering
+        self.renderer = sdl2.ext.Renderer(self.window, flags=sdl2.SDL_RENDERER_ACCELERATED | sdl2.SDL_RENDERER_PRESENTVSYNC)
         
         # Hit list for event handling (list of tuples: (rect, item_data))
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
@@ -39,6 +40,9 @@ class Window:
         # But if we recreate renderer, textures are invalid?
         # The renderer is created once in __init__.
         self._image_cache: Dict[str, sdl2.ext.Texture] = {}
+        
+        # Text Texture Cache: (font_path, size, color, text) -> Texture
+        self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
 
         self.width = width
         self.height = height
@@ -604,16 +608,29 @@ class Window:
                         last_line = last_line[:-1]
             
             current_y = rect[1]
+            current_y = rect[1]
             for line in lines:
-                surface = font_manager.render(line)
-                if not surface: continue
-                texture = sdl2.ext.Texture(self.renderer, surface)
+                # Cache lookup
+                # Ensure color is hashable (tuple)
+                cache_key = (font_path, size, tuple(color), line)
+                texture = self._text_texture_cache.get(cache_key)
+
+                if not texture:
+                    surface = font_manager.render(line)
+                    if not surface: continue
+                    texture = sdl2.ext.Texture(self.renderer, surface)
+                    self._text_texture_cache[cache_key] = texture
+
+                # Calculate width/height from texture usually, but we need Surface for w/h?
+                # sdl2.ext.Texture has .size property (w, h)
+                tw, th = texture.size
+
                 tx = rect[0]
                 if align == "center":
-                    tx = rect[0] + (rect[2] - surface.w) // 2
+                    tx = rect[0] + (rect[2] - tw) // 2
                 elif align == "right":
-                    tx = rect[0] + rect[2] - surface.w
-                self.renderer.copy(texture, dstrect=(tx, current_y, surface.w, surface.h))
+                    tx = rect[0] + rect[2] - tw
+                self.renderer.copy(texture, dstrect=(tx, current_y, tw, th))
                 current_y += single_line_h
                 if current_y > rect[1] + max_height: break
 
