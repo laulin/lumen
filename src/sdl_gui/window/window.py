@@ -37,10 +37,6 @@ class Window:
         self._font_cache: Dict[str, sdl2.ext.FontManager] = {}
 
         # Image cache: key -> Texture
-        # We need to keep surfaces or textures?
-        # Ideally textures for rendering.
-        # But if we recreate renderer, textures are invalid?
-        # The renderer is created once in __init__.
         self._image_cache: Dict[str, sdl2.ext.Texture] = {}
         
         # Text Texture Cache: (font_path, size, color, text) -> Texture
@@ -49,6 +45,10 @@ class Window:
         # Render Queue for Batching: list of SDL_Rect with same color
         self._render_queue: List[sdl2.SDL_Rect] = []
         self._render_queue_color: Tuple[int, int, int, int] = None
+        
+        # Measurement Cache: (id, width) -> height
+        self._measurement_cache: Dict[Tuple[str, int], int] = {}
+        self._last_window_size = (width, height)
 
 
         self.width = width
@@ -59,17 +59,7 @@ class Window:
         self.current_fps = 0
         
     def __enter__(self):
-        """Enter context: return self and potentially set self as a context root."""
-        # We can push self as a parent if Primitive expects a generic parent interface, 
-        # but Window is not a Container in the Primitive sense (it holds a display list).
-        # But we want `with Window(...) as w:`
-        # and inside we might do `with Layer(...)`.
-        # Windows don't usually serve as implicit parents for Primitives directly in this checking logic 
-        # unless we want `Rect()` inside `with Window()` to be added to Window's display list automatically?
-        # The Window renders a display_list passed to `render`.
-        # If we want implicit adding, Window needs `add_child`.
-        # Let's support it!
-        
+        """Enter context: return self and potentially set self as a context root."""      
         context.push_parent(self)
         return self
 
@@ -116,6 +106,13 @@ class Window:
         
         root_rect = (0, 0, width, height)
 
+        # Clear measurement cache if window width changed significantly (reflows)
+        # Actually, we key by width, so it's safe. But maybe clear periodically to avoid memory leak?
+        # For now, let's just clear if width changes to keep it simple and clean.
+        if (width, height) != self._last_window_size:
+             self._measurement_cache = {}
+             self._last_window_size = (width, height)
+
         # Clear hit list for this frame
         self._hit_list = []
 
@@ -138,9 +135,6 @@ class Window:
                 self.fps_start = now
             
             # Simple direct text rendering for debug overlay
-            # Use raw sdlgfx or text primitive logic?
-            # Let's use a quick text item injected into render cycle or direct call?
-            # Direct call to internal _render_text is safer to overlay on top.
             debug_item = {
                 core.KEY_TYPE: core.TYPE_TEXT,
                 core.KEY_TEXT: f"FPS: {self.current_fps}",
@@ -231,8 +225,6 @@ class Window:
                     return item
         return None
 
-
-
     def _flush_render_queue(self):
         """Draw all queued rectangles with the current batch color."""
         if not self._render_queue:
@@ -252,6 +244,7 @@ class Window:
         # Clear
         self._render_queue = []
         self._render_queue_color = None
+
     def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
         """Resolve a value (int or percentage string) to pixels."""
         if isinstance(val, int):
@@ -288,14 +281,9 @@ class Window:
         return (px + rx, py + ry, rw, rh)
 
 
-    def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int]) -> None:
+    def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render a single item recursively."""
-
-        # Resolve current item's rect
-        # For Root/Layer items, we resolve against parent.
-        # However, for children of VBox/HBox, the position will be overridden by the layout algorithm.
-        # But here we handle generic resolution.
-        
+      
         raw_rect = item.get(core.KEY_RECT)
         current_rect = parent_rect
         
@@ -328,16 +316,16 @@ class Window:
         if item_type == core.TYPE_LAYER:
             children = item.get(core.KEY_CHILDREN, [])
             for child in children:
-                self._render_item(child, current_rect)
+                self._render_item(child, current_rect, viewport)
 
         elif item_type == core.TYPE_SCROLLABLE_LAYER:
-            self._render_scrollable_layer(item, current_rect)
+            self._render_scrollable_layer(item, current_rect, viewport)
 
         elif item_type == core.TYPE_VBOX:
-            self._render_vbox(item, current_rect)
+            self._render_vbox(item, current_rect, viewport)
 
         elif item_type == core.TYPE_HBOX:
-            self._render_hbox(item, current_rect)
+            self._render_hbox(item, current_rect, viewport)
 
         elif item_type == core.TYPE_RECT:
             self._draw_rect_primitive(item, current_rect, raw_rect)
@@ -413,7 +401,7 @@ class Window:
                          self.renderer.draw_rect((bx, by, bw, bh), sdl2.ext.Color(*border_color))
 
 
-    def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+    def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render a VBox layout."""
         x, y, w, h = rect
         
@@ -458,11 +446,23 @@ class Window:
             
             child_rect = (child_x, child_y, child_w, child_h)
             
-            self._render_element_at(child, child_rect)
+            # CULLING
+            if viewport:
+                vx, vy, vw, vh = viewport
+                # Check intersection (vertical mostly for VBox)
+                # If child bottom < viewport top OR child top > viewport bottom
+                # child_y is absolute top
+                if (child_y + child_h < vy) or (child_y > vy + vh):
+                     # Skip Rendering
+                     pass
+                else:
+                     self._render_element_at(child, child_rect, viewport)
+            else:
+                self._render_element_at(child, child_rect, viewport)
             
             cursor_y += margin[0] + child_h + margin[2]
 
-    def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+    def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render an HBox layout."""
         x, y, w, h = rect
 
@@ -508,18 +508,28 @@ class Window:
             
             child_rect = (child_x, child_y, child_w, child_h)
             
-            self._render_element_at(child, child_rect)
+            child_rect = (child_x, child_y, child_w, child_h)
+            
+            # Culling for HBox (Horizontal)
+            if viewport:
+                 vx, vy, vw, vh = viewport
+                 if (child_x + child_w < vx) or (child_x > vx + vw):
+                      pass
+                 else:
+                      self._render_element_at(child, child_rect, viewport)
+            else:
+                 self._render_element_at(child, child_rect, viewport)
             
             cursor_x += margin[3] + child_w + margin[1]
 
-    def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+    def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render an element at a specific absolute rectangle."""
         item_type = item.get(core.KEY_TYPE)
         
         if item_type == core.TYPE_VBOX:
-            self._render_vbox(item, rect)
+            self._render_vbox(item, rect, viewport)
         elif item_type == core.TYPE_HBOX:
-            self._render_hbox(item, rect)
+            self._render_hbox(item, rect, viewport)
         elif item_type == core.TYPE_RECT:
             color = item.get("color", (255, 255, 255, 255))
             self.renderer.fill(rect, color)
@@ -529,7 +539,7 @@ class Window:
             self._flush_render_queue() # Ensure Z-order
             self._render_image(item, rect)
 
-    def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+    def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render a Scrollable Layer with clipping."""
         x, y, w, h = rect
         scroll_y = item.get(core.KEY_SCROLL_Y, 0)
@@ -565,10 +575,15 @@ class Window:
         # If we shift Y, size context (h) remains correct.
         
         virtual_parent_rect = (x, y - scroll_y, w, h)
+        
+        # Define New Viewport (Clip Rect)
+        # If an existing viewport existed, we should intersect? 
+        # Usually scrollable layer IS the viewport provider.
+        current_viewport = (x, y, w, h)
 
         children = item.get(core.KEY_CHILDREN, [])
         for child in children:
-            self._render_item(child, virtual_parent_rect)
+            self._render_item(child, virtual_parent_rect, current_viewport)
             
         # Unset Clip Rect (or pop) - Setting to None disables clipping
         self._flush_render_queue() # Flush inside clipped region before unsetting
@@ -710,16 +725,29 @@ class Window:
     def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
         """Measure the height of an item given the available width."""
         item_type = item.get(core.KEY_TYPE)
+        
+        # Check Cache
+        item_id = item.get(core.KEY_ID)
+        if item_id:
+             cache_key = (item_id, available_width)
+             if cache_key in self._measurement_cache:
+                  return self._measurement_cache[cache_key]
+
         raw_rect = item.get(core.KEY_RECT, [0, 0, 0, 0])
         raw_height = raw_rect[3]
         
         # If fixed height, resolve and return (unless it is auto)
         if raw_height != "auto":
-             return self._resolve_val(raw_height, available_height)
+             h = self._resolve_val(raw_height, available_height)
+             # Even fixed height might want caching if we want to avoid resolve_val? No, resolve_val is cheap.
+             # But consistency suggests we don't need to cache fixed height.
+             return h
         
         # If auto, measure based on type
         if item_type == core.TYPE_TEXT:
-             return self._measure_text_height(item, available_width, available_height)
+             h = self._measure_text_height(item, available_width, available_height)
+             if item_id: self._measurement_cache[cache_key] = h
+             return h
              
         elif item_type == core.TYPE_VBOX:
              raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
@@ -742,6 +770,8 @@ class Window:
                  
                  child_h = self._measure_item(child, child_w, inner_height)
                  total_h += mt + child_h + mb
+             
+             if item_id: self._measurement_cache[cache_key] = total_h
              return total_h
 
         elif item_type == core.TYPE_HBOX:
@@ -766,11 +796,20 @@ class Window:
                  
                  child_h = self._measure_item(child, child_w, inner_height)
                  max_child_h = max(max_child_h, mt + child_h + mb)
-             return pt + max_child_h + pb
+             
+             total_h = pt + max_child_h + pb
+             if item_id: self._measurement_cache[cache_key] = total_h
+             return total_h
 
         elif item_type == core.TYPE_IMAGE:
-             return self._measure_image_height(item, available_width)
+             h = self._measure_image_height(item, available_width)
+             if item_id: self._measurement_cache[cache_key] = h
+             return h
 
+        # Cache result
+        if item_id:
+             self._measurement_cache[cache_key] = 0
+             
         return 0
 
     def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
@@ -1006,17 +1045,27 @@ class Window:
                  line_x = start_x + (max_width - lw) // 2
             
             for text_chunk, seg, w, h in line:
-                fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
-                if not fm: continue
+                # Cache Lookup
+                cache_key = (font_path, size, tuple(seg.color), text_chunk, seg.bold)
+                texture = self._text_texture_cache.get(cache_key)
+                
+                if not texture:
+                    fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+                    if not fm: continue
+                
+                    surface = fm.render(text_chunk)
+                    if not surface: continue
+                    texture = sdl2.ext.Texture(self.renderer, surface)
+                    self._text_texture_cache[cache_key] = texture
                 
                 # Render logic
-                surface = fm.render(text_chunk)
-                texture = sdl2.ext.Texture(self.renderer, surface)
-                self.renderer.copy(texture, dstrect=(line_x, current_y, surface.w, surface.h))
+                # We need surface dimensions. Texture has them.
+                tw, th = texture.size
+                self.renderer.copy(texture, dstrect=(line_x, current_y, tw, th))
                 
                 # Handle Link Hitbox
                 if seg.link_target:
-                    chunk_rect = (line_x, current_y, surface.w, surface.h)
+                    chunk_rect = (line_x, current_y, tw, th)
                     self._hit_list.append((chunk_rect, {
                         "type": "link",
                         "target": seg.link_target,

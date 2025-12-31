@@ -46,55 +46,57 @@ def create_post_card(index):
     upvotes = random.randint(0, 5000)
     comments = random.randint(0, 500)
     
+    card_id = f"post_{index}"
+    
     # Main Card Container (Dark Theme)
-    with VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 0, 10, 0)) as card:
+    with VBox(0, 0, "100%", "auto", padding=(0, 0, 0, 0), margin=(10, 0, 10, 0), id=card_id) as card:
         card.set_background_color(35, 35, 35, 255) # Neutral Grey
         card.set_radius(10)
         card.set_border_width(1)
         card.set_border_color(60, 60, 60, 255)
         
         # --- META HEADER ---
-        with HBox(0, 0, "100%", 30, padding=(10, 10, 5, 20)) as meta_box:
+        with HBox(0, 0, "100%", 30, padding=(10, 10, 5, 20), id=f"{card_id}_meta") as meta_box:
             # Subreddit
-            ResponsiveText(0, 0, "auto", "100%", text=f"**{sub_name}**", size=12, color=sub_color, markup=True)
+            ResponsiveText(0, 0, "auto", "100%", text=f"**{sub_name}**", size=12, color=sub_color, markup=True, id=f"{card_id}_sub")
             # Dot
-            ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(129, 131, 132, 255), align="center")
+            ResponsiveText(0, 0, 20, "100%", text="•", size=12, color=(129, 131, 132, 255), align="center", id=f"{card_id}_dot")
             # User
-            ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(129, 131, 132, 255))
+            ResponsiveText(0, 0, "auto", "100%", text=f"Posted by u/{user}", size=12, color=(129, 131, 132, 255), id=f"{card_id}_user")
             # Time
-            ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(129, 131, 132, 255))
+            ResponsiveText(0, 0, "auto", "100%", text=f" {hours}h ago", size=12, color=(129, 131, 132, 255), id=f"{card_id}_time")
         
         # --- TITLE ---
-        with VBox(0, 0, "100%", "auto", padding=(10, 20, 5, 20)) as title_box:
+        with VBox(0, 0, "100%", "auto", padding=(10, 20, 5, 20), id=f"{card_id}_title_box") as title_box:
             # Title Color: Light Gray D7DADC
-            ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(215, 218, 220, 255), markup=True, wrap=True)
+            ResponsiveText(0, 0, "100%", "auto", text=f"**{title_txt}**", size=18, color=(215, 218, 220, 255), markup=True, wrap=True, id=f"{card_id}_title")
         
         # --- BODY ---
-        with VBox(0, 0, "100%", "auto", padding=(5, 20, 10, 20)) as body_box:
+        with VBox(0, 0, "100%", "auto", padding=(5, 20, 10, 20), id=f"{card_id}_body_box") as body_box:
             # Body Color: Slightly darker gray
-            ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(215, 218, 220, 255), wrap=True)
+            ResponsiveText(0, 0, "100%", "auto", text=body_txt, size=14, color=(215, 218, 220, 255), wrap=True, id=f"{card_id}_body")
         
         # --- ACTION BAR ---
-        with HBox(0, 0, "100%", 35, padding=(10, 20, 10, 20)) as action_box:
+        with HBox(0, 0, "100%", 35, padding=(10, 20, 10, 20), id=f"{card_id}_action_box") as action_box:
             
             # Upvotes (Orangeish)
-            ResponsiveText(0, 0, "auto", "100%", text="[▲]", size=14, color=(255, 69, 0, 255), markup=True)
+            ResponsiveText(0, 0, "auto", "100%", text="[▲]", size=14, color=(255, 69, 0, 255), markup=True, id=f"{card_id}_up")
             vote_str = f"{upvotes/1000:.1f}k" if upvotes > 1000 else str(upvotes)
             # Text Color
-            ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(215, 218, 220, 255))
-            ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(113, 147, 255, 255), markup=True)
+            ResponsiveText(0, 0, "auto", "100%", text=f" {vote_str}", size=14, color=(215, 218, 220, 255), id=f"{card_id}_votes")
+            ResponsiveText(0, 0, "auto", "100%", text=" [▼]", size=14, color=(113, 147, 255, 255), markup=True, id=f"{card_id}_down")
             
             # Spacing
-            Rectangle(0, 0, 30, "100%", color=(0,0,0,0))
+            Rectangle(0, 0, 30, "100%", color=(0,0,0,0), id=f"{card_id}_space")
             
             # Comments
-            ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(129, 131, 132, 255), markup=True)
+            ResponsiveText(0, 0, "auto", "100%", text=f"[💬 {comments} Comments]", size=12, color=(129, 131, 132, 255), markup=True, id=f"{card_id}_comments")
     
     return card
 
 def main():
     # Implicit API context usage
-    with Window("Optix Reddit Clone", 500, 800) as win:
+    with Window("Optix Reddit Clone", 500, 800, debug=True) as win:
         
         # --- HEADER ---
         with HBox(0, 0, "100%", 50, padding=(0, 15, 0, 15)) as header:
@@ -146,11 +148,20 @@ def main():
 
         # Render loop
         running = True
-        current_scroll_y = 0
+        target_scroll_y = 0.0
+        current_scroll_y = 0.0
         item_count = 10
         
         while running:
-            scroll_layer.scroll_y = current_scroll_y
+            # Smooth Scroll Logic (Lerp)
+            # Interpolate current towards target
+            diff = target_scroll_y - current_scroll_y
+            if abs(diff) > 0.5:
+                current_scroll_y += diff * 0.1 # Smoothing factor (0.1 = slow, 0.5 = fast)
+            else:
+                current_scroll_y = target_scroll_y
+
+            scroll_layer.scroll_y = int(current_scroll_y)
             
             # Manual Display List Assembly (for stacking Layers)
             # We construct the list explicitly to control Z-order (Painter's Algorithm)
@@ -171,11 +182,17 @@ def main():
                 elif event["type"] == core.EVENT_SCROLL:
                     if event["target"] == "feed":
                         delta = event["delta"]
-                        current_scroll_y -= delta * 40 # Sensitivity
-                        if current_scroll_y < 0: current_scroll_y = 0
+                        # Update TARGET instead of current
+                        target_scroll_y -= delta * 60 # Sensitivity
+                        
+                        # Clamp Target
+                        if target_scroll_y < 0: target_scroll_y = 0
                         
                         approx_height = item_count * 200 
-                        if current_scroll_y > approx_height - 1000:
+                        # Infinite scroll trigger based on target or current? Usually current.
+                        # But expanding bounds should happen if we scroll far enough.
+                        
+                        if target_scroll_y > approx_height - 1000:
                              for _ in range(5):
                                  item_count += 1
                                  create_post_card(item_count) 
