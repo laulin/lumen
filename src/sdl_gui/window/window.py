@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Tuple, Union, Callable
 from sdl_gui import core, markdown
 from sdl2 import sdlttf
 import ctypes
+from sdl_gui import context
 
 
 class Window:
@@ -58,36 +59,15 @@ class Window:
         # The Window renders a display_list passed to `render`.
         # If we want implicit adding, Window needs `add_child`.
         # Let's support it!
-        from sdl_gui import context
+        
         context.push_parent(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        from sdl_gui import context
         context.pop_parent()
 
     def add_child(self, child: Any) -> None:
         """Allow adding children directly to window (e.g. for implicit context)."""
-        # Window usually doesn't store a list of children to render persistently unless we change its model.
-        # Currently it takes `display_list` in `render`.
-        # If we want a retained mode style usage with implicit context:
-        # We might need to store them in a temporary list or changes `Window` to be retained mode.
-        # The user request asks for "with XXX() as x:".
-        # If they do:
-        # with Window(...) as w:
-        #    with Layer(...) as l:
-        #        ...
-        #    w.render([l.to_data()])
-        # Then Window context is just for scope.
-        # BUT if they want `with Window...: Rect...` to work, Window needs to store it.
-        # Given existing architecture seems to be `window.render(display_list)`, 
-        # making Window a persistent container might be a larger change.
-        # However, for the context manager to be useful as "sugar", it should probably build a list?
-        # Let's add a `children` list to Window that can be passed to render implicitly or explicitly?
-        # For now, let's keep it simple: Just enable the syntax. 
-        # If later we want `w.add_child`, we can add it.
-        # Wait, if I push Window to stack, primitives will try to call `add_child`.
-        # So I MUST implement `add_child`.
         if not hasattr(self, 'root_children'):
             self.root_children = []
         self.root_children.append(child)
