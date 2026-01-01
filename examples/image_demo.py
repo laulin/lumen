@@ -146,7 +146,7 @@ def main():
                 display_list[2][core.KEY_SCROLL_Y] = scroll_layer.scroll_y
 
         win.render(display_list)
-        sdl2.SDL_Delay(10)
+        sdl2.SDL_Delay(8)
 
     sdl2.ext.quit()
 

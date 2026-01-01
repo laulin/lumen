@@ -90,6 +90,7 @@ def main():
         for e in events:
             if e['type'] == 'quit':
                 running = False
+        sdl2.SDL_Delay(8)
                 
 if __name__ == "__main__":
     main()

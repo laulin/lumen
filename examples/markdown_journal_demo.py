@@ -149,7 +149,7 @@ def main():
              pass # Already handled or consumed.
         
         win.window.refresh()
-        sdl2.SDL_Delay(16)
+        sdl2.SDL_Delay(8)
 
 if __name__ == "__main__":
     main()

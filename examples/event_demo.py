@@ -63,7 +63,7 @@ def main():
         events = sdl2.ext.get_events()
         for event in events:
              pass
-
+        sdl2.SDL_Delay(8)
 
                 
     sdl2.ext.quit()

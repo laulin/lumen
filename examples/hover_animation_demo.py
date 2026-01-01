@@ -157,7 +157,7 @@ def main():
                 display_list.append(label.to_data())
             
             win.render(display_list)
-            #sdl2.SDL_Delay(16)
+            sdl2.SDL_Delay(8)
 
     sdl2.ext.quit()
 

@@ -197,7 +197,7 @@ def main():
                                  item_count += 1
                                  create_post_card(item_count) 
                                  content_vbox.add_child(create_post_card(item_count))
-
+            sdl2.SDL_Delay(8)
         
     sdl2.ext.quit()
 

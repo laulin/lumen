@@ -43,6 +43,7 @@ def main():
         for event in sdl2.ext.get_events():
             if event.type == sdl2.SDL_QUIT:
                 running = False
+        sdl2.SDL_Delay(8)
                 
     sdl2.ext.quit()
 

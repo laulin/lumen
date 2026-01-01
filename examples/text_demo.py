@@ -115,7 +115,7 @@ def main():
             if ui_e.get("type") == core.EVENT_QUIT:
                 running = False
             
-        sdl2.SDL_Delay(16)
+        sdl2.SDL_Delay(8)
                     
     sdl2.ext.quit()
 
