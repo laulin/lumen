@@ -33,7 +33,7 @@ def main():
     header_layout = HBox(0, 0, "100%", 80, padding=(0, 20, 0, 20))
     
     # Logo
-    logo = ResponsiveText(0, 0, "20%", "100%", text="Optix", size=32, color=(255, 255, 255, 255), align="center")
+    logo = ResponsiveText(0, 0, "20%", "100%", text="Lumen", size=32, color=(255, 255, 255, 255), align="center")
     
     # Nav Links
     nav_box = HBox(0, 0, "60%", "100%")

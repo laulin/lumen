@@ -66,7 +66,7 @@ def create_image_card(image_path: str, title: str, subtitle: str) -> VBox:
 
 def main():
     width, height = 1024, 768
-    win = Window("Optix Gallery Showcase", width, height)
+    win = Window("Lumen Gallery Showcase", width, height)
     
     # Gallery Data
     gallery_items = [
@@ -91,7 +91,7 @@ def main():
     header = VBox(x=0, y=0, width="100%", height=100, padding=(40, 30, 40, 30), margin=(0,0,0,0))
     header_title = ResponsiveText(
         x=0, y=0, width="100%", height="auto", 
-        text="OPTIX GALLERY", size=32, color=THEME_ACCENT, margin=(0, 0, 5, 0)
+        text="LUMEN GALLERY", size=32, color=THEME_ACCENT, margin=(0, 0, 5, 0)
     )
     header_subtitle = ResponsiveText(
         x=0, y=0, width="100%", height="auto",

@@ -96,7 +96,7 @@ def create_post_card(index):
 
 def main():
     # Implicit API context usage
-    with Window("Optix Reddit Clone", 500, 800, debug=True) as win:
+    with Window("Lumen Reddit Clone", 500, 800, debug=True) as win:
         
         # --- HEADER ---
         with HBox(0, 0, "100%", 50, padding=(0, 15, 0, 15)) as header:
