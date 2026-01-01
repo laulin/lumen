@@ -13,7 +13,7 @@ from sdl2 import sdlimage as img
 class Window:
     """SDL Window wrapper that renders a display list."""
     
-    def __init__(self, title: str, width: int, height: int, debug: bool = False):
+    def __init__(self, title: str, width: int, height: int, debug: bool = False, renderer_flags: int = sdl2.SDL_RENDERER_ACCELERATED):
         sdl2.ext.init()
         try:
             # Attempt to initialize TTF
@@ -29,7 +29,7 @@ class Window:
 
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
         # Enable Hardware Acceleration for smoother rendering
-        self.renderer = sdl2.ext.Renderer(self.window, flags=sdl2.SDL_RENDERER_ACCELERATED)
+        self.renderer = sdl2.ext.Renderer(self.window, flags=renderer_flags)
         
         # Hit list for event handling (list of tuples: (rect, item_data))
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
@@ -361,8 +361,7 @@ class Window:
         # Draw filled rectangle
         if radius > 0:
             self._flush_render_queue() # Draw before rounded
-            sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, 
-                                   self._to_sdlgfx_color(color))
+            self._draw_aa_rounded_box(rect, radius, color)
         else:
              # Basic Rect - Attempt Batching
              r, g, b, a = color
@@ -400,6 +399,49 @@ class Window:
                          sdlgfx.roundedRectangleColor(self.renderer.sdlrenderer, bx, by, bx+bw-1, by+bh-1, current_radius, gfx_b_color)
                      else:
                          self.renderer.draw_rect((bx, by, bw, bh), sdl2.ext.Color(*border_color))
+
+    def _draw_aa_rounded_box(self, rect: Tuple[int, int, int, int], radius: int, color: Tuple[int, int, int, int]) -> None:
+        """Draw an anti-aliased rounded box."""
+        x, y, w, h = rect
+        gfx_color = self._to_sdlgfx_color(color)
+        
+        # 1. Fill (Aliased)
+        sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, gfx_color)
+        
+        # 2. AA Edges
+        # Top
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y, x + w - 1 - radius, y, gfx_color)
+        # Bottom
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y + h - 1, x + w - 1 - radius, y + h - 1, gfx_color)
+        # Left
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x, y + radius, x, y + h - 1 - radius, gfx_color)
+        # Right
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + w - 1, y + radius, x + w - 1, y + h - 1 - radius, gfx_color)
+        
+        # 3. AA Corners with Clipping
+        # Helper for clip setting
+        def set_clip(cx, cy, cw, ch):
+             clip = sdl2.SDL_Rect(cx, cy, cw, ch)
+             sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, ctypes.byref(clip))
+             
+        # Top-Left
+        set_clip(x, y, radius, radius)
+        sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + radius, radius, gfx_color)
+        
+        # Top-Right
+        set_clip(x + w - radius, y, radius, radius)
+        sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + radius, radius, gfx_color)
+        
+        # Bottom-Right
+        set_clip(x + w - radius, y + h - radius, radius, radius)
+        sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + h - 1 - radius, radius, gfx_color)
+        
+        # Bottom-Left
+        set_clip(x, y + h - radius, radius, radius)
+        sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + h - 1 - radius, radius, gfx_color)
+        
+        # Reset Clip
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
 
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
@@ -726,7 +768,6 @@ class Window:
     def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
         """Measure the height of an item given the available width."""
         item_type = item.get(core.KEY_TYPE)
-        print(f"DEBUG: Measuring TYPE={item_type}")
         
         # Check Cache
         item_id = item.get(core.KEY_ID)
