@@ -1,0 +1,659 @@
+
+import sdl2
+import sdl2.ext
+from sdl2 import sdlgfx
+from typing import List, Dict, Any, Tuple, Union, Callable
+from sdl_gui import core, markdown
+from sdl2 import sdlttf
+import ctypes
+from sdl2 import sdlimage as img
+
+class Renderer:
+    """Handles rendering of the display list using SDL2."""
+    
+    def __init__(self, window: sdl2.ext.Window, flags: int = sdl2.SDL_RENDERER_ACCELERATED):
+        self.window = window
+        self.renderer = sdl2.ext.Renderer(self.window, flags=flags)
+        
+        try:
+            sdlttf.TTF_Init()
+            self.ttf_available = True
+        except Exception as e:
+            print(f"Warning: Failed to initialize SDL_ttf: {e}")
+            self.ttf_available = False
+
+        self._font_cache: Dict[str, sdl2.ext.FontManager] = {}
+        self._image_cache: Dict[str, sdl2.ext.Texture] = {}
+        self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
+        self._measurement_cache: Dict[Tuple[str, int], int] = {}
+        
+        self._render_queue: List[sdl2.SDL_Rect] = []
+        self._render_queue_color: Tuple[int, int, int, int] = None
+        
+        self._last_window_size = (0, 0)
+        self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
+
+    def clear(self):
+        self.renderer.clear()
+        self._hit_list = []
+        
+    def present(self):
+        self.renderer.present()
+
+    def get_hit_list(self) -> List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]]:
+        return self._hit_list
+
+    def save_screenshot(self, filename: str) -> None:
+        w, h = self.window.size
+        surface = sdl2.SDL_CreateRGBSurface(0, w, h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
+        sdl2.SDL_RenderReadPixels(self.renderer.sdlrenderer, None, 
+                                  sdl2.SDL_PIXELFORMAT_ARGB8888, 
+                                  surface.contents.pixels, 
+                                  surface.contents.pitch)
+        sdl2.SDL_SaveBMP(surface, filename.encode('utf-8'))
+        sdl2.SDL_FreeSurface(surface)
+
+    def render_list(self, display_list: List[Dict[str, Any]]) -> None:
+        width, height = self.window.size
+        self.renderer.logical_size = (width, height)
+        root_rect = (0, 0, width, height)
+
+        if (width, height) != self._last_window_size:
+             self._measurement_cache = {}
+             self._last_window_size = (width, height)
+
+        for item in display_list:
+            self._render_item(item, root_rect)
+        
+        self._flush_render_queue()
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+
+    def render_item_direct(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        item_type = item.get(core.KEY_TYPE)
+        if item_type == core.TYPE_TEXT:
+            self._render_text(item, rect)
+        self._flush_render_queue()
+
+    def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        raw_rect = item.get(core.KEY_RECT)
+        current_rect = parent_rect
+        
+        if raw_rect:
+            px, py, pw, ph = parent_rect
+            if raw_rect[2] == "auto": rw = self._measure_item_width(item, ph)
+            else: rw = self._resolve_val(raw_rect[2], pw)
+            
+            if raw_rect[3] == "auto": rh = self._measure_item(item, rw, ph)
+            else: rh = self._resolve_val(raw_rect[3], ph)
+
+            rx = self._resolve_val(raw_rect[0], pw)
+            ry = self._resolve_val(raw_rect[1], ph)
+            current_rect = (px + rx, py + ry, rw, rh)
+
+        self._hit_list.append((current_rect, item))
+        item_type = item.get(core.KEY_TYPE)
+        
+        if item_type == core.TYPE_LAYER:
+            for child in item.get(core.KEY_CHILDREN, []):
+                self._render_item(child, current_rect, viewport)
+        elif item_type == core.TYPE_SCROLLABLE_LAYER:
+            self._render_scrollable_layer(item, current_rect, viewport)
+        elif item_type == core.TYPE_VBOX:
+            self._render_vbox(item, current_rect, viewport)
+        elif item_type == core.TYPE_HBOX:
+            self._render_hbox(item, current_rect, viewport)
+        elif item_type == core.TYPE_RECT:
+            self._draw_rect_primitive(item, current_rect, raw_rect)
+        elif item_type == core.TYPE_TEXT:
+            self._render_text(item, current_rect)
+        elif item_type == core.TYPE_IMAGE:
+            self._render_image(item, current_rect)
+
+    def _flush_render_queue(self):
+        if not self._render_queue: return
+        count = len(self._render_queue)
+        rects_array = (sdl2.SDL_Rect * count)(*self._render_queue)
+        r, g, b, a = self._render_queue_color
+        sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
+        sdl2.SDL_RenderFillRects(self.renderer.sdlrenderer, rects_array, count)
+        self._render_queue = []
+        self._render_queue_color = None
+
+    def _to_sdlgfx_color(self, color: Tuple[int, int, int, int]) -> int:
+        r, g, b, a = color
+        return (a << 24) | (b << 16) | (g << 8) | r
+
+    def _draw_rect_primitive(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], raw_rect_check: Any = True) -> None:
+        if not raw_rect_check: return
+        color = item.get("color", (255, 255, 255, 255))
+        if len(color) == 3: color = (*color, 255)
+        
+        radius = item.get(core.KEY_RADIUS, 0)
+        x, y, w, h = rect
+        
+        if radius > 0:
+            self._flush_render_queue()
+            self._draw_aa_rounded_box(rect, radius, color)
+        else:
+             if self._render_queue_color == color:
+                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
+             else:
+                 self._flush_render_queue()
+                 self._render_queue_color = color
+                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
+        
+        self._draw_border(item, rect, radius)
+
+    def _draw_border(self, item, rect, radius):
+        border_color = item.get(core.KEY_BORDER_COLOR)
+        border_width = item.get(core.KEY_BORDER_WIDTH, 0)
+        if border_width <= 0 or not border_color: return
+        
+        if len(border_color) == 3: border_color = (*border_color, 255)
+        x, y, w, h = rect
+        
+        if radius <= 0:
+            self._flush_render_queue()
+            b_color = sdl2.ext.Color(*border_color)
+            for i in range(border_width):
+                 self.renderer.draw_rect((x+i, y+i, w-2*i, h-2*i), b_color)
+        else:
+            self._flush_render_queue()
+            gfx_b_color = self._to_sdlgfx_color(border_color)
+            for i in range(border_width):
+                 bx, by = x + i, y + i
+                 bw, bh = w - 2 * i, h - 2 * i
+                 if bw <= 0 or bh <= 0: break
+                 curr_r = max(0, radius - i)
+                 if curr_r > 0:
+                     sdlgfx.roundedRectangleColor(self.renderer.sdlrenderer, bx, by, bx+bw-1, by+bh-1, curr_r, gfx_b_color)
+                 else:
+                     self.renderer.draw_rect((bx, by, bw, bh), sdl2.ext.Color(*border_color))
+
+    def _draw_aa_rounded_box(self, rect: Tuple[int, int, int, int], radius: int, color: Tuple[int, int, int, int]) -> None:
+        x, y, w, h = rect
+        gfx_color = self._to_sdlgfx_color(color)
+        
+        sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, gfx_color)
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y, x + w - 1 - radius, y, gfx_color)
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y + h - 1, x + w - 1 - radius, y + h - 1, gfx_color)
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x, y + radius, x, y + h - 1 - radius, gfx_color)
+        sdlgfx.aalineColor(self.renderer.sdlrenderer, x + w - 1, y + radius, x + w - 1, y + h - 1 - radius, gfx_color)
+        
+        def set_clip(cx, cy, cw, ch):
+             clip = sdl2.SDL_Rect(cx, cy, cw, ch)
+             sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, ctypes.byref(clip))
+             
+        set_clip(x, y, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + radius, radius, gfx_color)
+        set_clip(x + w - radius, y, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + radius, radius, gfx_color)
+        set_clip(x + w - radius, y + h - radius, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + h - 1 - radius, radius, gfx_color)
+        set_clip(x, y + h - radius, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + h - 1 - radius, radius, gfx_color)
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+
+    def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        x, y, w, h = rect
+        if item.get(core.KEY_COLOR): self._draw_rect_primitive(item, rect)
+
+        raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        pt = self._resolve_val(raw_padding[0], h)
+        pr = self._resolve_val(raw_padding[1], w)
+        pb = self._resolve_val(raw_padding[2], h)
+        pl = self._resolve_val(raw_padding[3], w)
+        
+        cursor_y = y + pt
+        av_w = w - pr - pl
+        av_h = h - pt - pb
+        
+        for child in item.get(core.KEY_CHILDREN, []):
+            raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            mt = self._resolve_val(raw_margin[0], av_h)
+            mb = self._resolve_val(raw_margin[2], av_h)
+            ml = self._resolve_val(raw_margin[3], av_w)
+            
+            cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
+            cw = self._resolve_val(cw_raw[2], av_w)
+            ch = self._measure_item(child, cw, av_h)
+            
+            c_rect = (x + pl + ml, cursor_y + mt, cw, ch)
+            
+            if not viewport or (cursor_y + mt + ch >= viewport[1] and cursor_y + mt <= viewport[1] + viewport[3]):
+                self._render_element_at(child, c_rect, viewport)
+            
+            cursor_y += mt + ch + mb
+
+    def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        x, y, w, h = rect
+        if item.get(core.KEY_COLOR): self._draw_rect_primitive(item, rect)
+
+        raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        pt = self._resolve_val(raw_padding[0], h)
+        pr = self._resolve_val(raw_padding[1], w)
+        pb = self._resolve_val(raw_padding[2], h)
+        pl = self._resolve_val(raw_padding[3], w)
+        
+        cursor_x = x + pl
+        av_w = w - pr - pl
+        av_h = h - pt - pb
+        
+        for child in item.get(core.KEY_CHILDREN, []):
+            raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            mt = self._resolve_val(raw_margin[0], av_h)
+            ml = self._resolve_val(raw_margin[3], av_w)
+            mr = self._resolve_val(raw_margin[1], av_w)
+            
+            cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
+            cw = self._measure_item_width(child, av_h) if cw_raw[2] == "auto" else self._resolve_val(cw_raw[2], av_w)
+            ch = self._measure_item(child, cw, av_h)
+            
+            c_rect = (cursor_x + ml, y + pt + mt, cw, ch)
+            
+            if not viewport or (cursor_x + ml + cw >= viewport[0] and cursor_x + ml <= viewport[0] + viewport[2]):
+                 self._render_element_at(child, c_rect, viewport)
+            
+            cursor_x += ml + cw + mr
+
+    def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        # Same dispatcher as _render_item, but specifically for explicit rects.
+        # We can reuse _render_item but need to ensure it processes the given rect.
+        # Since _render_item calculates rect from parent+relative, we can pass (0,0,0,0) as parent 
+        # and ensure child has absolute rect? No.
+        # Just manually call the specific render method.
+        typ = item.get(core.KEY_TYPE)
+        if typ == core.TYPE_VBOX: self._render_vbox(item, rect, viewport)
+        elif typ == core.TYPE_HBOX: self._render_hbox(item, rect, viewport)
+        elif typ == core.TYPE_RECT: self._draw_rect_primitive(item, rect)
+        elif typ == core.TYPE_TEXT: self._render_text(item, rect)
+        elif typ == core.TYPE_IMAGE:
+             self._flush_render_queue()
+             self._render_image(item, rect)
+
+    def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        x, y, w, h = rect
+        scroll_y = item.get(core.KEY_SCROLL_Y, 0)
+        
+        clip_rect = sdl2.SDL_Rect(x, y, w, h)
+        self._flush_render_queue()
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
+        
+        virtual_parent_rect = (x, y - scroll_y, w, h)
+        current_viewport = (x, y, w, h)
+
+        for child in item.get(core.KEY_CHILDREN, []):
+            self._render_item(child, virtual_parent_rect, current_viewport)
+            
+        self._flush_render_queue()
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+
+    def _get_font_manager(self, font_path, size, color, bold=False):
+        cache_key = f"{font_path}_{size}_{color}_{bold}"
+        font_manager = self._font_cache.get(cache_key)
+        if not font_manager:
+            try:
+                font_manager = sdl2.ext.FontManager(font_path, size=size, color=color)
+                if bold and hasattr(font_manager, "font"):
+                    sdlttf.TTF_SetFontStyle(font_manager.font, sdlttf.TTF_STYLE_BOLD)
+                self._font_cache[cache_key] = font_manager
+            except Exception:
+                return None
+        return font_manager
+
+    def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        self._flush_render_queue()
+        if not self.ttf_available or not item.get(core.KEY_TEXT, ""): return
+
+        if item.get(core.KEY_MARKUP, False):
+             self._render_rich_text(item, rect)
+             return
+             
+        lines, settings = self._layout_plain_text(item, rect)
+        self._draw_plain_text_lines(lines, settings, rect)
+
+    def _layout_plain_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> Tuple[List[str], Dict]:
+        text = item.get(core.KEY_TEXT, "")
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        size = self._get_resolved_font_size(item, rect[3])
+        color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        
+        fm = self._get_font_manager(font_path, size, color)
+        if not fm: return [], {}
+
+        def measure(s): surf = fm.render(s); return (surf.w if surf else 0, surf.h if surf else 0)
+
+        lines = [text] if not item.get(core.KEY_WRAP, True) else self._wrap_text(text, measure, rect[2])
+        _, lh = measure("Tg")
+        
+        if len(lines) * lh > rect[3] and item.get(core.KEY_ELLIPSIS, True):
+            lines = self._apply_ellipsis(lines, measure, rect[2], rect[3], lh)
+            
+        settings = {"font_path": font_path, "size": size, "color": color, 
+            "align": item.get(core.KEY_ALIGN, "left"), "line_h": lh, "fm": fm}
+        return lines, settings
+
+    def _wrap_text(self, text, measure_func, max_width):
+        words = text.split(" ")
+        lines = []; current_line = []
+        for word in words:
+            test = " ".join(current_line + [word])
+            w, _ = measure_func(test)
+            if w > max_width and current_line:
+                 lines.append(" ".join(current_line)); current_line = [word]
+            else: current_line.append(word)
+        if current_line: lines.append(" ".join(current_line))
+        return lines
+
+    def _apply_ellipsis(self, lines, measure, max_w, max_h, line_h):
+        max_l = max(1, max_h // line_h)
+        if len(lines) > max_l:
+            lines = lines[:max_l]; last = lines[-1]
+            while True:
+                w, _ = measure(last + "...")
+                if w <= max_w: lines[-1] = last + "..."; break
+                if not last: break
+                last = last[:-1]
+        return lines
+
+    def _draw_plain_text_lines(self, lines, settings, rect):
+        cy = rect[1]; max_y = rect[1] + rect[3]
+        for line in lines:
+            if cy > max_y: break
+            cache_key = (settings["font_path"], settings["size"], tuple(settings["color"]), line)
+            texture = self._text_texture_cache.get(cache_key)
+            if not texture:
+                s = settings["fm"].render(line)
+                if not s: continue
+                texture = sdl2.ext.Texture(self.renderer, s)
+                self._text_texture_cache[cache_key] = texture
+            
+            tw, th = texture.size
+            tx = rect[0]
+            if settings["align"] == "center": tx += (rect[2] - tw) // 2
+            elif settings["align"] == "right": tx += rect[2] - tw
+            self.renderer.copy(texture, dstrect=(tx, cy, tw, th))
+            cy += settings["line_h"]
+
+    def _render_rich_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        lines, settings = self._layout_rich_text(item, rect)
+        self._draw_rich_text_lines(lines, settings, rect, item)
+
+    def _layout_rich_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]):
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        size = self._get_resolved_font_size(item, rect[3])
+        base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        
+        parser = markdown.MarkdownParser(default_color=base_color)
+        segments = parser.parse(item.get(core.KEY_TEXT, ""))
+        
+        def measure_chunk(text_str, seg):
+            fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+            s = fm.render(text_str) if fm else None
+            return (s.w, s.h) if s else (0,0)
+            
+        lines = self._wrap_rich_text(segments, measure_chunk, rect[2], item.get(core.KEY_WRAP, True))
+        _, lh = measure_chunk("Tg", segments[0] if segments else None)
+        line_height = lh if lh > 0 else size
+
+        settings = {"font_path": font_path, "size": size, "line_h": line_height}
+        return lines, settings
+
+    def _get_resolved_font_size(self, item, parent_h):
+        raw = item.get(core.KEY_FONT_SIZE, 16)
+        s = self._resolve_val(raw, parent_h) if parent_h > 0 else (raw if isinstance(raw, int) else 16)
+        return s if s > 0 else 16
+
+    def _wrap_rich_text(self, segments, measure_func, max_width, do_wrap):
+        chunked = self._tokenize_rich_text(segments)
+        lines = []; current_line = []; curr_w = 0
+        for txt, seg in chunked:
+            if txt == "\n":
+                lines.append(current_line); current_line = []; curr_w = 0; continue
+            w, h = measure_func(txt, seg)
+            if do_wrap and current_line and (curr_w + w > max_width):
+                lines.append(current_line); current_line = [(txt, seg, w, h)]; curr_w = w
+            else:
+                current_line.append((txt, seg, w, h)); curr_w += w
+        if current_line: lines.append(current_line)
+        return lines
+
+    def _tokenize_rich_text(self, segments):
+        chunked = []
+        for seg in segments:
+            lines = seg.text.split('\n')
+            for i, line in enumerate(lines):
+                words = line.split(" ")
+                for j, w in enumerate(words):
+                    suf = " " if j < len(words) - 1 else ""
+                    if w+suf: chunked.append((w+suf, seg))
+                if i < len(lines) - 1: chunked.append(("\n", seg))
+        return chunked
+
+    def _draw_rich_text_lines(self, lines, settings, rect, item):
+        curr_y = rect[1]; start_x = rect[0]; max_w = rect[2]
+        align = item.get(core.KEY_ALIGN, "left")
+        
+        for line in lines:
+            line_h = settings["line_h"]
+            for _, _, _, h in line: line_h = max(line_h, h)
+            
+            lx = start_x
+            if align == "center":
+                 lw = sum([c[2] for c in line])
+                 lx += (max_w - lw) // 2
+            
+            for txt, seg, w, h in line:
+                self._draw_rich_chunk(txt, seg, lx, curr_y, w, h, settings)
+                if seg.link_target:
+                    self._hit_list.append(((lx, curr_y, w, h), {
+                        "type": "link", "target": seg.link_target,
+                        core.KEY_LISTEN_EVENTS: [core.EVENT_CLICK]
+                    }))
+                lx += w
+            curr_y += line_h
+
+    def _draw_rich_chunk(self, txt, seg, x, y, w, h, settings):
+        cache_key = (settings["font_path"], settings["size"], tuple(seg.color), txt, seg.bold)
+        texture = self._text_texture_cache.get(cache_key)
+        if not texture:
+            fm = self._get_font_manager(settings["font_path"], settings["size"], seg.color, seg.bold)
+            if fm:
+                surf = fm.render(txt)
+                if surf:
+                    texture = sdl2.ext.Texture(self.renderer, surf)
+                    self._text_texture_cache[cache_key] = texture
+        if texture:
+            self.renderer.copy(texture, dstrect=(x, y, *texture.size))
+
+    def _render_image(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        source = item.get(core.KEY_SOURCE)
+        if not source: return
+
+        scale_mode = item.get(core.KEY_SCALE_MODE, "fit")
+        item_id = item.get(core.KEY_ID)
+        cache_key = item_id if item_id else str(id(source))
+        
+        texture = self._image_cache.get(cache_key)
+        if not texture:
+            surface = self._load_image_source(source)
+            if surface:
+                texture = sdl2.ext.Texture(self.renderer, surface)
+                sdl2.SDL_FreeSurface(surface)
+                self._image_cache[cache_key] = texture
+        if not texture: return
+            
+        img_w, img_h = texture.size
+        dest_x, dest_y, dest_w, dest_h = rect
+        final_x, final_y, final_w, final_h = dest_x, dest_y, dest_w, dest_h
+        
+        if scale_mode == "fit" and img_w > 0 and img_h > 0:
+             scale = min(dest_w / img_w, dest_h / img_h)
+             final_w = int(img_w * scale); final_h = int(img_h * scale)
+             final_x = dest_x + (dest_w - final_w) // 2
+             final_y = dest_y + (dest_h - final_h) // 2
+        elif scale_mode == "center":
+             final_w = img_w; final_h = img_h
+             final_x = dest_x + (dest_w - img_w) // 2
+             final_y = dest_y + (dest_h - img_h) // 2
+             
+        self.renderer.copy(texture, dstrect=(final_x, final_y, final_w, final_h))
+
+    def _load_image_source(self, source: Union[str, bytes, Callable]) -> Any:
+        try: import sdl2.sdlimage as img
+        except ImportError: return None
+
+        surface = None
+        if isinstance(source, str): surface = img.IMG_Load(source.encode('utf-8'))
+        elif isinstance(source, (bytes, bytearray)):
+            rw = sdl2.rwops.rw_from_object(source)
+            surface = img.IMG_Load_RW(rw, 0)
+        elif callable(source):
+            res = source()
+            if isinstance(res, sdl2.SDL_Surface): surface = res
+            elif hasattr(res, "contents") and isinstance(res.contents, sdl2.SDL_Surface): surface = res
+            elif isinstance(res, (bytes, bytearray)): return self._load_image_source(res)
+        return surface
+
+    def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
+        if isinstance(val, int): return val
+        elif isinstance(val, str):
+            if val.endswith("%"):
+                try: pct = float(val[:-1]); return int(parent_len * (pct / 100))
+                except ValueError: return 0
+            elif val.endswith("px"):
+                try: return int(val[:-2])
+                except ValueError: return 0
+            else:
+                 try: return int(val)
+                 except ValueError: return 0
+        return 0
+
+    def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
+        item_id = item.get(core.KEY_ID)
+        cache_key = (item_id, available_width) if item_id else None
+        if cache_key and cache_key in self._measurement_cache: return self._measurement_cache[cache_key]
+
+        if core.KEY_RECT in item:
+            raw_height = item[core.KEY_RECT][3]
+            if raw_height != "auto":
+                 return self._resolve_val(raw_height, available_height)
+        
+        h = 0
+        typ = item.get(core.KEY_TYPE)
+        if typ == core.TYPE_TEXT: h = self._measure_text_height(item, available_width, available_height)
+        elif typ == core.TYPE_VBOX: h = self._measure_vbox_height(item, available_width, available_height)
+        elif typ == core.TYPE_HBOX: h = self._measure_hbox_height(item, available_width, available_height)
+        elif typ == core.TYPE_IMAGE: h = self._measure_image_height(item, available_width)
+        
+        if cache_key: self._measurement_cache[cache_key] = h
+        return h
+
+    def _measure_vbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
+        pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        h_sum = self._resolve_val(pad[0], av_h) + self._resolve_val(pad[2], av_h)
+        iw = max(0, av_w - self._resolve_val(pad[3], av_w) - self._resolve_val(pad[1], av_w))
+        ih = max(0, av_h - h_sum)
+        
+        for child in item.get(core.KEY_CHILDREN, []):
+            m = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            mt = self._resolve_val(m[0], ih); mb = self._resolve_val(m[2], ih)
+            cw_raw = child.get(core.KEY_RECT, [0,0,100,0])[2]
+            cw = self._resolve_val(cw_raw, iw)
+            h_sum += mt + self._measure_item(child, cw, ih) + mb
+        return h_sum
+
+    def _measure_hbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
+        pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        pt = self._resolve_val(pad[0], av_h); pb = self._resolve_val(pad[2], av_h)
+        iw = max(0, av_w - self._resolve_val(pad[3], av_w) - self._resolve_val(pad[1], av_w))
+        ih = max(0, av_h - pt - pb)
+        max_h = 0
+        
+        for child in item.get(core.KEY_CHILDREN, []):
+            m = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            mt = self._resolve_val(m[0], ih); mb = self._resolve_val(m[2], ih)
+            cw_raw = child.get(core.KEY_RECT, [0,0,100,0])[2]
+            cw = self._resolve_val(cw_raw, iw)
+            max_h = max(max_h, mt + self._measure_item(child, cw, ih) + mb)
+        return pt + max_h + pb
+
+    def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        typ = item.get(core.KEY_TYPE)
+        if typ == core.TYPE_TEXT: return self._measure_text_width(item, parent_height)
+        elif typ == core.TYPE_HBOX: return self._measure_hbox_width(item, parent_height)
+        elif typ == core.TYPE_IMAGE:
+             src = item.get(core.KEY_SOURCE)
+             if src:
+                 s = self._load_image_source(src)
+                 return s.w if s else 0
+        return 0
+
+    def _measure_hbox_width(self, item: Dict[str, Any], parent_height: int) -> int:
+        pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        w_sum = self._resolve_val(pad[3], 0) + self._resolve_val(pad[1], 0)
+        children = item.get(core.KEY_CHILDREN, [])
+        for child in children:
+            m = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
+            w_sum += self._resolve_val(m[3], 0) + self._resolve_val(m[1], 0)
+            cw_raw = child.get(core.KEY_RECT, [0,0,"auto",0])[2]
+            cw = self._measure_item_width(child, parent_height) if cw_raw == "auto" else self._resolve_val(cw_raw, 0)
+            w_sum += cw
+        return w_sum
+
+    def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
+        text = item.get(core.KEY_TEXT, "")
+        if not text: return 0
+        
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        size = self._get_resolved_font_size(item, parent_height)
+        color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        
+        if item.get(core.KEY_MARKUP, False):
+             parser = markdown.MarkdownParser(default_color=color)
+             segments = parser.parse(text)
+             total_w = 0
+             for seg in segments:
+                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
+                 if fm: s = fm.render(seg.text); total_w += s.w if s else 0
+             return total_w
+        else:
+             fm = self._get_font_manager(font_path, size, color)
+             if fm: s = fm.render(text); return s.w if s else 0
+        return 0
+
+    def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
+        if item.get(core.KEY_MARKUP, False): return self._measure_rich_text_height(item, width, parent_height)
+        else: return 20 
+
+    def _measure_rich_text_height(self, item: Dict[str, Any], width: int, parent_height: int) -> int:
+        text = item.get(core.KEY_TEXT, "")
+        font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        size = self._get_resolved_font_size(item, parent_height)
+        
+        parser = markdown.MarkdownParser(default_color=item.get(core.KEY_COLOR, (0,0,0,255)))
+        segments = parser.parse(text)
+        
+        def measure_chunk(t, s):
+            fm = self._get_font_manager(font_path, size, s.color, s.bold)
+            s = fm.render(t) if fm else None
+            return (s.w, s.h) if s else (0,0)
+
+        lines = self._wrap_rich_text(segments, measure_chunk, width, True)
+        _, lh = measure_chunk("Tg", segments[0] if segments else None)
+        line_height = lh if lh > 0 else size
+        return len(lines) * line_height
+
+    def _measure_image_height(self, item: Dict[str, Any], width: int) -> int:
+        source = item.get(core.KEY_SOURCE)
+        if not source: return 0
+        
+        item_id = item.get(core.KEY_ID)
+        cache_key = item_id if item_id else str(id(source))
+        
+        texture = self._image_cache.get(cache_key)
+        if not texture:
+             surface = self._load_image_source(source)
+             if surface:
+                 texture = sdl2.ext.Texture(self.renderer, surface)
+                 sdl2.SDL_FreeSurface(surface)
+                 self._image_cache[cache_key] = texture
+        
+        if not texture or texture.size[0] == 0: return 0
+        return int(texture.size[1] * (width / texture.size[0]))
