@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Tuple
 from sdl_gui import core, context
 from sdl_gui.window.renderer import Renderer
 from sdl_gui.window.debug import Debug
+from sdl_gui.debug.server import DebugServer
 
 class Window:
     """SDL Window wrapper that delegates rendering and debug to sub-components."""
@@ -18,6 +19,12 @@ class Window:
         # Sub-components
         self.renderer = Renderer(self.window, flags=renderer_flags)
         self.debug_system = Debug(enabled=debug)
+        
+        # Debug Server
+        self.debug_server: DebugServer = None
+        if debug:
+            self.debug_server = DebugServer()
+            self.debug_server.start()
         
         # State
         self.width = width
@@ -34,6 +41,8 @@ class Window:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         context.pop_parent()
+        if self.debug_server:
+            self.debug_server.stop()
 
     def add_child(self, child: Any) -> None:
         """Allow adding children directly to window (e.g. for implicit context)."""
@@ -82,6 +91,18 @@ class Window:
         
         # Always emit Tick
         ui_events.append({"type": core.EVENT_TICK, "ticks": sdl2.SDL_GetTicks()})
+        
+        # Process Debug Server Actions
+        if self.debug_server:
+            for action_type, data in self.debug_server.get_pending_actions():
+                if action_type == "event":
+                    ui_events.append(data)
+                elif action_type == "command":
+                    val = data.get("action")
+                    if val == "quit":
+                        ui_events.append({"type": core.EVENT_QUIT})
+                    else:
+                        self._handle_debug_command(data)
         
         for event in sdl_events:
             # Handle Quit
@@ -256,3 +277,16 @@ class Window:
                 if required_event in listen_events:
                     return item
         return None
+
+    def _handle_debug_command(self, data: Dict[str, Any]) -> None:
+        """Handle debug commands that affect the window state."""
+        action = data.get("action")
+        if action == "resize":
+             w = data.get("width")
+             h = data.get("height")
+             if w and h:
+                 self.window.size = (w, h)
+                 self.width = w; self.height = h
+        elif action == "screenshot":
+             filename = data.get("filename", "debug_screenshot.bmp")
+             self.save_screenshot(filename)

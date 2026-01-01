@@ -687,7 +687,16 @@ class Renderer:
         if not bg_color: bg_color = (0,0,0,0)
         rect_item[core.KEY_COLOR] = bg_color
         
-        self._draw_rect_primitive(rect_item, rect)
+        radius = rect_item.get(core.KEY_RADIUS, 0)
+        if radius > 0:
+             self._draw_rect_primitive(rect_item, rect)
+        else:
+             if len(bg_color) == 4 and bg_color[3] > 0:
+                 # Ensure ints
+                 ix, iy, iw, ih = int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
+                 self.renderer.fill((ix, iy, iw, ih), bg_color)
+
+             self._draw_border(rect_item, rect, radius)
         
         # 2. Content Area
         raw_pad = item.get(core.KEY_PADDING, (5, 5, 5, 5))
@@ -702,7 +711,15 @@ class Renderer:
         content_h = max(0, h - pt - pb)
         
         # Clipping
+        self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, sdl2.SDL_Rect(content_x, content_y, content_w, content_h))
+        
+        text = item.get(core.KEY_TEXT, "")
+        placeholder = item.get("placeholder", "")
+        # ... (unchanged parts implied, need large chunk) ...
+        # Can I use multiple chunks? Yes.
+        
+        # Chunk 2: Cursor Logic
         
         text = item.get(core.KEY_TEXT, "")
         placeholder = item.get("placeholder", "")
@@ -737,6 +754,7 @@ class Renderer:
              else:
                  self._render_simple_text(display_text, draw_x, draw_y, font_path, size, display_color)
                  
+             self._flush_render_queue()
              sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
              return
 
@@ -811,7 +829,7 @@ class Renderer:
                 # Cursor (if on this line)
                 if focused and i == cursor_line_idx:
                     # Blink Logic
-                    if (sdl2.SDL_GetTicks() // 500) % 2 == 0:
+                    if item.get("cursor_visible", True):
                         cx = draw_x + self.measure_text_width(line[:cursor_col_idx], font_path, size)
                         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, *color)
                         sdl2.SDL_RenderDrawLine(self.renderer.sdlrenderer, cx, curr_ly, cx, curr_ly + size + 2)
@@ -840,7 +858,7 @@ class Renderer:
             # Cursor
             if focused:
                  # Blink Logic
-                 if (sdl2.SDL_GetTicks() // 500) % 2 == 0:
+                 if item.get("cursor_visible", True):
                      cursor_offset = self.measure_text_width(text[:cursor_pos], font_path, size)
                      cursor_x = draw_x + cursor_offset
                      sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, *color)

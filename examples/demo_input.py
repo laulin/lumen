@@ -65,7 +65,7 @@ def main():
          # A rounded container acting as background
          # Input inside is transparent
          # Note: We need absolute coords for primitives for now in this demo structure
-         Rectangle(500, 180, 200, 40, color=(230, 240, 255), radius=20, border_color=(100, 150, 255), border_width=2)
+         bg_rect = Rectangle(500, 180, 200, 40, color=(230, 240, 255), radius=20, border_color=(100, 150, 255), border_width=2)
          inp_style = Input(510, 185, 180, 30, placeholder="Custom Style...", background_color=None, border_width=0, id="input_style")
          
          # --- Rest of Standard Inputs ---
@@ -100,6 +100,17 @@ def main():
             if event["type"] == core.EVENT_QUIT:
                 running = False
             
+            # Helper for styled input feedback
+            if event.get("target") == "input_style":
+                if event["type"] == core.EVENT_FOCUS:
+                    # Lighter and thicker border
+                    bg_rect.border_color = (255, 200, 200)
+                    bg_rect.border_width = 4
+                elif event["type"] == core.EVENT_BLUR:
+                    # Darker and thinner border
+                    bg_rect.border_color = (100, 150, 255)
+                    bg_rect.border_width = 2
+
             target_id = event.get("target")
             if target_id:
                 # Dispatch mapping

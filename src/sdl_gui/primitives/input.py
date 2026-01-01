@@ -56,7 +56,9 @@ class Input(BasePrimitive):
         self.last_click_time = 0
         self.click_count = 0
         self.last_mouse_x = 0
+        self.last_mouse_x = 0
         self.last_mouse_y = 0
+        self.cursor_visible = True
         
         # History
         self.history = []
@@ -88,6 +90,7 @@ class Input(BasePrimitive):
         data["cursor_pos"] = self.cursor_pos
         data["selection_start"] = self.selection_start
         data["focused"] = self.focused
+        data["cursor_visible"] = self.cursor_visible
         data["scroll_x"] = self.scroll_x
         data["scroll_y"] = self.scroll_y
         
@@ -177,6 +180,10 @@ class Input(BasePrimitive):
                  # Ensure selection_start was set on click (it was).
                  
         elif evt_type == core.EVENT_TICK:
+            # Blink Logic
+            ticks = event.get("ticks", sdl2.SDL_GetTicks())
+            self.cursor_visible = (ticks // 500) % 2 == 0
+            
             if self.dragging and self.focused and context:
                  # Autoscroll
                  scroll_speed = 5
