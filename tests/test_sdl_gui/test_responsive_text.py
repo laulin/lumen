@@ -1,6 +1,8 @@
 import unittest
-from sdl_gui.primitives.responsive_text import ResponsiveText
+
 from sdl_gui import core
+from sdl_gui.primitives.responsive_text import ResponsiveText
+
 
 class TestResponsiveText(unittest.TestCase):
     def test_init_defaults(self):
@@ -13,14 +15,14 @@ class TestResponsiveText(unittest.TestCase):
         self.assertTrue(txt.ellipsis)
 
     def test_to_data(self):
-        txt = ResponsiveText(x=10, y=10, width=100, height=30, 
-                             text="Test", 
-                             size="50%", 
+        txt = ResponsiveText(x=10, y=10, width=100, height=30,
+                             text="Test",
+                             size="50%",
                              color=(255, 0, 0, 255),
                              align="center",
                              id="txt1")
         data = txt.to_data()
-        
+
         self.assertEqual(data[core.KEY_TYPE], core.TYPE_TEXT)
         self.assertEqual(data[core.KEY_TEXT], "Test")
         self.assertEqual(data[core.KEY_FONT_SIZE], "50%")

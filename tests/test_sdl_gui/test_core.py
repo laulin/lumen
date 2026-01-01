@@ -1,5 +1,7 @@
 import unittest
+
 from sdl_gui import core
+
 
 class TestCoreProtocol(unittest.TestCase):
     def test_constants_defined(self):

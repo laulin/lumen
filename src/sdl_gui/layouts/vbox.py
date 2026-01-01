@@ -1,10 +1,12 @@
-from typing import Dict, Any, List, Union
+from typing import Any, Dict, List, Union
+
 from sdl_gui import core
 from sdl_gui.primitives.container import Container
 
+
 class VBox(Container):
     """Vertical Box Layout."""
-    
+
     def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str],
                  padding: tuple = (0, 0, 0, 0), margin: tuple = (0, 0, 0, 0),
                  id: str = None,

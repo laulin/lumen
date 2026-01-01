@@ -1,11 +1,13 @@
-from typing import List, Dict, Any, Union
+from typing import Any, Dict, List, Union
+
 from sdl_gui import core
 from sdl_gui.primitives.container import Container
 
+
 class Layer(Container):
     """A container layer that manages a list of children elements."""
-    
-    def __init__(self, x: Union[int, str], y: Union[int, str], 
+
+    def __init__(self, x: Union[int, str], y: Union[int, str],
                  width: Union[int, str], height: Union[int, str],
                  id: str = None,
                  listen_events: List[str] = None):

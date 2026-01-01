@@ -1,20 +1,21 @@
 
+import ctypes
+from typing import Any, Callable, Dict, List, Tuple, Union
+
 import sdl2
 import sdl2.ext
-from sdl2 import sdlgfx
-from typing import List, Dict, Any, Tuple, Union, Callable
+from sdl2 import sdlgfx, sdlttf
+
 from sdl_gui import core, markdown
-from sdl2 import sdlttf
-import ctypes
-from sdl2 import sdlimage as img
+
 
 class Renderer:
     """Handles rendering of the display list using SDL2."""
-    
+
     def __init__(self, window: sdl2.ext.Window, flags: int = sdl2.SDL_RENDERER_ACCELERATED):
         self.window = window
         self.renderer = sdl2.ext.Renderer(self.window, flags=flags)
-        
+
         try:
             sdlttf.TTF_Init()
             self.ttf_available = True
@@ -26,17 +27,17 @@ class Renderer:
         self._image_cache: Dict[str, sdl2.ext.Texture] = {}
         self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
         self._measurement_cache: Dict[Tuple[str, int], int] = {}
-        
+
         self._render_queue: List[sdl2.SDL_Rect] = []
         self._render_queue_color: Tuple[int, int, int, int] = None
-        
+
         self._last_window_size = (0, 0)
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
 
     def clear(self):
         self.renderer.clear()
         self._hit_list = []
-        
+
     def present(self):
         self.renderer.present()
 
@@ -46,9 +47,9 @@ class Renderer:
     def save_screenshot(self, filename: str) -> None:
         w, h = self.window.size
         surface = sdl2.SDL_CreateRGBSurface(0, w, h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
-        sdl2.SDL_RenderReadPixels(self.renderer.sdlrenderer, None, 
-                                  sdl2.SDL_PIXELFORMAT_ARGB8888, 
-                                  surface.contents.pixels, 
+        sdl2.SDL_RenderReadPixels(self.renderer.sdlrenderer, None,
+                                  sdl2.SDL_PIXELFORMAT_ARGB8888,
+                                  surface.contents.pixels,
                                   surface.contents.pitch)
         sdl2.SDL_SaveBMP(surface, filename.encode('utf-8'))
         sdl2.SDL_FreeSurface(surface)
@@ -64,7 +65,7 @@ class Renderer:
 
         for item in display_list:
             self._render_item(item, root_rect)
-        
+
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
@@ -79,12 +80,12 @@ class Renderer:
     def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         raw_rect = item.get(core.KEY_RECT)
         current_rect = parent_rect
-        
+
         if raw_rect:
             px, py, pw, ph = parent_rect
             if raw_rect[2] == "auto": rw = self._measure_item_width(item, ph)
             else: rw = self._resolve_val(raw_rect[2], pw)
-            
+
             if raw_rect[3] == "auto": rh = self._measure_item(item, rw, ph)
             else: rh = self._resolve_val(raw_rect[3], ph)
 
@@ -94,7 +95,7 @@ class Renderer:
 
         self._hit_list.append((current_rect, item))
         item_type = item.get(core.KEY_TYPE)
-        
+
         if item_type == core.TYPE_LAYER:
             for child in item.get(core.KEY_CHILDREN, []):
                 self._render_item(child, current_rect, viewport)
@@ -131,10 +132,10 @@ class Renderer:
         if not raw_rect_check: return
         color = item.get("color", (255, 255, 255, 255))
         if len(color) == 3: color = (*color, 255)
-        
+
         radius = item.get(core.KEY_RADIUS, 0)
         x, y, w, h = rect
-        
+
         if radius > 0:
             self._flush_render_queue()
             self._draw_aa_rounded_box(rect, radius, color)
@@ -148,17 +149,17 @@ class Renderer:
                  self._flush_render_queue()
                  self._render_queue_color = color
                  self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
-        
+
         self._draw_border(item, rect, radius)
 
     def _draw_border(self, item, rect, radius):
         border_color = item.get(core.KEY_BORDER_COLOR)
         border_width = item.get(core.KEY_BORDER_WIDTH, 0)
         if border_width <= 0 or not border_color: return
-        
+
         if len(border_color) == 3: border_color = (*border_color, 255)
         x, y, w, h = rect
-        
+
         if radius <= 0:
             self._flush_render_queue()
             b_color = sdl2.ext.Color(*border_color)
@@ -180,17 +181,17 @@ class Renderer:
     def _draw_aa_rounded_box(self, rect: Tuple[int, int, int, int], radius: int, color: Tuple[int, int, int, int]) -> None:
         x, y, w, h = rect
         gfx_color = self._to_sdlgfx_color(color)
-        
+
         sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, gfx_color)
         sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y, x + w - 1 - radius, y, gfx_color)
         sdlgfx.aalineColor(self.renderer.sdlrenderer, x + radius, y + h - 1, x + w - 1 - radius, y + h - 1, gfx_color)
         sdlgfx.aalineColor(self.renderer.sdlrenderer, x, y + radius, x, y + h - 1 - radius, gfx_color)
         sdlgfx.aalineColor(self.renderer.sdlrenderer, x + w - 1, y + radius, x + w - 1, y + h - 1 - radius, gfx_color)
-        
+
         def set_clip(cx, cy, cw, ch):
              clip = sdl2.SDL_Rect(cx, cy, cw, ch)
              sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, ctypes.byref(clip))
-             
+
         set_clip(x, y, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + radius, radius, gfx_color)
         set_clip(x + w - radius, y, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + radius, radius, gfx_color)
         set_clip(x + w - radius, y + h - radius, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + h - 1 - radius, radius, gfx_color)
@@ -206,26 +207,26 @@ class Renderer:
         pr = self._resolve_val(raw_padding[1], w)
         pb = self._resolve_val(raw_padding[2], h)
         pl = self._resolve_val(raw_padding[3], w)
-        
+
         cursor_y = y + pt
         av_w = w - pr - pl
         av_h = h - pt - pb
-        
+
         for child in item.get(core.KEY_CHILDREN, []):
             raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(raw_margin[0], av_h)
             mb = self._resolve_val(raw_margin[2], av_h)
             ml = self._resolve_val(raw_margin[3], av_w)
-            
+
             cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
             cw = self._resolve_val(cw_raw[2], av_w)
             ch = self._measure_item(child, cw, av_h)
-            
+
             c_rect = (x + pl + ml, cursor_y + mt, cw, ch)
-            
+
             if not viewport or (cursor_y + mt + ch >= viewport[1] and cursor_y + mt <= viewport[1] + viewport[3]):
                 self._render_element_at(child, c_rect, viewport)
-            
+
             cursor_y += mt + ch + mb
 
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
@@ -237,32 +238,32 @@ class Renderer:
         pr = self._resolve_val(raw_padding[1], w)
         pb = self._resolve_val(raw_padding[2], h)
         pl = self._resolve_val(raw_padding[3], w)
-        
+
         cursor_x = x + pl
         av_w = w - pr - pl
         av_h = h - pt - pb
-        
+
         for child in item.get(core.KEY_CHILDREN, []):
             raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(raw_margin[0], av_h)
             ml = self._resolve_val(raw_margin[3], av_w)
             mr = self._resolve_val(raw_margin[1], av_w)
-            
+
             cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
             cw = self._measure_item_width(child, av_h) if cw_raw[2] == "auto" else self._resolve_val(cw_raw[2], av_w)
             ch = self._measure_item(child, cw, av_h)
-            
+
             c_rect = (cursor_x + ml, y + pt + mt, cw, ch)
-            
+
             if not viewport or (cursor_x + ml + cw >= viewport[0] and cursor_x + ml <= viewport[0] + viewport[2]):
                  self._render_element_at(child, c_rect, viewport)
-            
+
             cursor_x += ml + cw + mr
 
     def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         # Same dispatcher as _render_item, but specifically for explicit rects.
         # We can reuse _render_item but need to ensure it processes the given rect.
-        # Since _render_item calculates rect from parent+relative, we can pass (0,0,0,0) as parent 
+        # Since _render_item calculates rect from parent+relative, we can pass (0,0,0,0) as parent
         # and ensure child has absolute rect? No.
         # Just manually call the specific render method.
         typ = item.get(core.KEY_TYPE)
@@ -279,17 +280,17 @@ class Renderer:
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
         scroll_y = item.get(core.KEY_SCROLL_Y, 0)
-        
+
         clip_rect = sdl2.SDL_Rect(x, y, w, h)
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
-        
+
         virtual_parent_rect = (x, y - scroll_y, w, h)
         current_viewport = (x, y, w, h)
 
         for child in item.get(core.KEY_CHILDREN, []):
             self._render_item(child, virtual_parent_rect, current_viewport)
-            
+
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
@@ -313,7 +314,7 @@ class Renderer:
         if item.get(core.KEY_MARKUP, False):
              self._render_rich_text(item, rect)
              return
-             
+
         lines, settings = self._layout_plain_text(item, rect)
         self._draw_plain_text_lines(lines, settings, rect)
 
@@ -322,7 +323,7 @@ class Renderer:
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, rect[3])
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
-        
+
         fm = self._get_font_manager(font_path, size, color)
         if not fm: return [], {}
 
@@ -330,11 +331,11 @@ class Renderer:
 
         lines = [text] if not item.get(core.KEY_WRAP, True) else self._wrap_text(text, measure, rect[2])
         _, lh = measure("Tg")
-        
+
         if len(lines) * lh > rect[3] and item.get(core.KEY_ELLIPSIS, True):
             lines = self._apply_ellipsis(lines, measure, rect[2], rect[3], lh)
-            
-        settings = {"font_path": font_path, "size": size, "color": color, 
+
+        settings = {"font_path": font_path, "size": size, "color": color,
             "align": item.get(core.KEY_ALIGN, "left"), "line_h": lh, "fm": fm}
         return lines, settings
 
@@ -372,7 +373,7 @@ class Renderer:
                 if not s: continue
                 texture = sdl2.ext.Texture(self.renderer, s)
                 self._text_texture_cache[cache_key] = texture
-            
+
             tw, th = texture.size
             tx = rect[0]
             if settings["align"] == "center": tx += (rect[2] - tw) // 2
@@ -388,15 +389,15 @@ class Renderer:
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, rect[3])
         base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
-        
+
         parser = markdown.MarkdownParser(default_color=base_color)
         segments = parser.parse(item.get(core.KEY_TEXT, ""))
-        
+
         def measure_chunk(text_str, seg):
             fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
             s = fm.render(text_str) if fm else None
             return (s.w, s.h) if s else (0,0)
-            
+
         lines = self._wrap_rich_text(segments, measure_chunk, rect[2], item.get(core.KEY_WRAP, True))
         _, lh = measure_chunk("Tg", segments[0] if segments else None)
         line_height = lh if lh > 0 else size
@@ -438,16 +439,16 @@ class Renderer:
     def _draw_rich_text_lines(self, lines, settings, rect, item):
         curr_y = rect[1]; start_x = rect[0]; max_w = rect[2]
         align = item.get(core.KEY_ALIGN, "left")
-        
+
         for line in lines:
             line_h = settings["line_h"]
             for _, _, _, h in line: line_h = max(line_h, h)
-            
+
             lx = start_x
             if align == "center":
                  lw = sum([c[2] for c in line])
                  lx += (max_w - lw) // 2
-            
+
             for txt, seg, w, h in line:
                 self._draw_rich_chunk(txt, seg, lx, curr_y, w, h, settings)
                 if seg.link_target:
@@ -478,7 +479,7 @@ class Renderer:
         scale_mode = item.get(core.KEY_SCALE_MODE, "fit")
         item_id = item.get(core.KEY_ID)
         cache_key = item_id if item_id else str(id(source))
-        
+
         texture = self._image_cache.get(cache_key)
         if not texture:
             surface = self._load_image_source(source)
@@ -487,11 +488,11 @@ class Renderer:
                 sdl2.SDL_FreeSurface(surface)
                 self._image_cache[cache_key] = texture
         if not texture: return
-            
+
         img_w, img_h = texture.size
         dest_x, dest_y, dest_w, dest_h = rect
         final_x, final_y, final_w, final_h = dest_x, dest_y, dest_w, dest_h
-        
+
         if scale_mode == "fit" and img_w > 0 and img_h > 0:
              scale = min(dest_w / img_w, dest_h / img_h)
              final_w = int(img_w * scale); final_h = int(img_h * scale)
@@ -501,7 +502,7 @@ class Renderer:
              final_w = img_w; final_h = img_h
              final_x = dest_x + (dest_w - img_w) // 2
              final_y = dest_y + (dest_h - img_h) // 2
-             
+
         self.renderer.copy(texture, dstrect=(final_x, final_y, final_w, final_h))
 
     def _load_image_source(self, source: Union[str, bytes, Callable]) -> Any:
@@ -543,14 +544,14 @@ class Renderer:
             raw_height = item[core.KEY_RECT][3]
             if raw_height != "auto":
                  return self._resolve_val(raw_height, available_height)
-        
+
         h = 0
         typ = item.get(core.KEY_TYPE)
         if typ == core.TYPE_TEXT: h = self._measure_text_height(item, available_width, available_height)
         elif typ == core.TYPE_VBOX: h = self._measure_vbox_height(item, available_width, available_height)
         elif typ == core.TYPE_HBOX: h = self._measure_hbox_height(item, available_width, available_height)
         elif typ == core.TYPE_IMAGE: h = self._measure_image_height(item, available_width)
-        
+
         if cache_key: self._measurement_cache[cache_key] = h
         return h
 
@@ -559,7 +560,7 @@ class Renderer:
         h_sum = self._resolve_val(pad[0], av_h) + self._resolve_val(pad[2], av_h)
         iw = max(0, av_w - self._resolve_val(pad[3], av_w) - self._resolve_val(pad[1], av_w))
         ih = max(0, av_h - h_sum)
-        
+
         for child in item.get(core.KEY_CHILDREN, []):
             m = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(m[0], ih); mb = self._resolve_val(m[2], ih)
@@ -574,7 +575,7 @@ class Renderer:
         iw = max(0, av_w - self._resolve_val(pad[3], av_w) - self._resolve_val(pad[1], av_w))
         ih = max(0, av_h - pt - pb)
         max_h = 0
-        
+
         for child in item.get(core.KEY_CHILDREN, []):
             m = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(m[0], ih); mb = self._resolve_val(m[2], ih)
@@ -609,11 +610,11 @@ class Renderer:
     def _measure_text_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
         text = item.get(core.KEY_TEXT, "")
         if not text: return 0
-        
+
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, parent_height)
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
-        
+
         if item.get(core.KEY_MARKUP, False):
              parser = markdown.MarkdownParser(default_color=color)
              segments = parser.parse(text)
@@ -629,16 +630,16 @@ class Renderer:
 
     def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
         if item.get(core.KEY_MARKUP, False): return self._measure_rich_text_height(item, width, parent_height)
-        else: return 20 
+        else: return 20
 
     def _measure_rich_text_height(self, item: Dict[str, Any], width: int, parent_height: int) -> int:
         text = item.get(core.KEY_TEXT, "")
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, parent_height)
-        
+
         parser = markdown.MarkdownParser(default_color=item.get(core.KEY_COLOR, (0,0,0,255)))
         segments = parser.parse(text)
-        
+
         def measure_chunk(t, s):
             fm = self._get_font_manager(font_path, size, s.color, s.bold)
             s = fm.render(t) if fm else None
@@ -652,10 +653,10 @@ class Renderer:
     def _measure_image_height(self, item: Dict[str, Any], width: int) -> int:
         source = item.get(core.KEY_SOURCE)
         if not source: return 0
-        
+
         item_id = item.get(core.KEY_ID)
         cache_key = item_id if item_id else str(id(source))
-        
+
         texture = self._image_cache.get(cache_key)
         if not texture:
              surface = self._load_image_source(source)
@@ -663,7 +664,7 @@ class Renderer:
                  texture = sdl2.ext.Texture(self.renderer, surface)
                  sdl2.SDL_FreeSurface(surface)
                  self._image_cache[cache_key] = texture
-        
+
         if not texture or texture.size[0] == 0: return 0
         return int(texture.size[1] * (width / texture.size[0]))
 
@@ -680,13 +681,13 @@ class Renderer:
     def _render_input(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         self._flush_render_queue()
         x, y, w, h = rect
-        
+
         # 1. Draw Background & Border
         rect_item = item.copy()
         bg_color = item.get("background_color")
         if not bg_color: bg_color = (0,0,0,0)
         rect_item[core.KEY_COLOR] = bg_color
-        
+
         radius = rect_item.get(core.KEY_RADIUS, 0)
         if radius > 0:
              self._draw_rect_primitive(rect_item, rect)
@@ -697,48 +698,48 @@ class Renderer:
                  self.renderer.fill((ix, iy, iw, ih), bg_color)
 
              self._draw_border(rect_item, rect, radius)
-        
+
         # 2. Content Area
         raw_pad = item.get(core.KEY_PADDING, (5, 5, 5, 5))
         pt = self._resolve_val(raw_pad[0], h)
         pl = self._resolve_val(raw_pad[3], w)
         pr = self._resolve_val(raw_pad[1], w)
         pb = self._resolve_val(raw_pad[2], h)
-        
+
         content_x = x + pl
         content_y = y + pt
         content_w = max(0, w - pl - pr)
         content_h = max(0, h - pt - pb)
-        
+
         # Clipping
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, sdl2.SDL_Rect(content_x, content_y, content_w, content_h))
-        
+
         text = item.get(core.KEY_TEXT, "")
         placeholder = item.get("placeholder", "")
         # ... (unchanged parts implied, need large chunk) ...
         # Can I use multiple chunks? Yes.
-        
+
         # Chunk 2: Cursor Logic
-        
+
         text = item.get(core.KEY_TEXT, "")
         placeholder = item.get("placeholder", "")
         cursor_pos = item.get("cursor_pos", 0)
         focused = item.get("focused", False)
         selection_start = item.get("selection_start")
-        
+
         scroll_x = item.get("scroll_x", 0)
         scroll_y = item.get("scroll_y", 0)
         multiline = item.get("multiline", False)
-        
+
         font_path = item.get(core.KEY_FONT)
         size = item.get(core.KEY_FONT_SIZE, 16)
         color = item.get(core.KEY_COLOR, (0,0,0,255))
-        
+
         # Adjust start position by scroll
         draw_x = content_x - scroll_x
         draw_y = content_y - scroll_y
-        
+
         display_text = text if text else placeholder
         display_color = color if text else (150, 150, 150, 255)
 
@@ -753,7 +754,7 @@ class Renderer:
                       curr_ly += line_h
              else:
                  self._render_simple_text(display_text, draw_x, draw_y, font_path, size, display_color)
-                 
+
              self._flush_render_queue()
              sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
              return
@@ -761,18 +762,18 @@ class Renderer:
         # Render Text & Cursor
         if multiline:
             # Simple Multiline Rendering
-            # We split by \n and draw lines. 
+            # We split by \n and draw lines.
             # Cursor positioning in multiline is complex for rendering (finding x,y of index).
             # For this iteration, we iterate to find cursor line/col.
-            
+
             lines = text.split('\n')
-            
+
             # Find Cursor Line/Col
             curr_idx = 0
             cursor_line_idx = 0
             cursor_col_idx = 0
             found_cursor = False
-            
+
             for i, line in enumerate(lines):
                 line_len = len(line) + 1 # +1 for newline char
                 if not found_cursor:
@@ -786,46 +787,46 @@ class Renderer:
                          cursor_col_idx = len(line)
                          found_cursor = True
                 curr_idx += line_len
-            
+
             # Draw Lines & Selection
-            line_h = size + 4 
+            line_h = size + 4
             curr_ly = draw_y
-            
+
             # Global index tracker
             curr_char_idx = 0
-            
+
             for i, line in enumerate(lines):
                 line_len = len(line)
                 line_end_idx = curr_char_idx + line_len # exclusive of newline
-                
+
                 # Render Selection for this line (Background)
                 if focused and selection_start is not None:
                      sel_min = min(cursor_pos, selection_start)
                      sel_max = max(cursor_pos, selection_start)
-                     
+
                      l_start = max(sel_min, curr_char_idx)
                      l_end = min(sel_max, line_end_idx + 1)
-                     
+
                      if l_start < l_end:
                          rel_start = l_start - curr_char_idx
                          rel_end = l_end - curr_char_idx
-                         
+
                          measure_end = min(rel_end, len(line))
-                         
+
                          px_start = self.measure_text_width(line[:rel_start], font_path, size)
                          px_end = self.measure_text_width(line[:measure_end], font_path, size)
-                         
+
                          sel_w = px_end - px_start
                          if rel_end > len(line):
-                             sel_w += 10 
-                         
+                             sel_w += 10
+
                          sel_rect = sdl2.SDL_Rect(draw_x + px_start, curr_ly, sel_w, size + 4)
                          sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, 50, 150, 255, 128)
                          sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, ctypes.byref(sel_rect))
 
                 # Render Text (Foreground)
                 self._render_simple_text(line, draw_x, curr_ly, font_path, size, display_color)
-                
+
                 # Cursor (if on this line)
                 if focused and i == cursor_line_idx:
                     # Blink Logic
@@ -833,28 +834,28 @@ class Renderer:
                         cx = draw_x + self.measure_text_width(line[:cursor_col_idx], font_path, size)
                         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, *color)
                         sdl2.SDL_RenderDrawLine(self.renderer.sdlrenderer, cx, curr_ly, cx, curr_ly + size + 2)
-                    
+
                 curr_ly += line_h
                 curr_char_idx += line_len + 1 # +1 for newline
-                
+
         else:
             # Single Line with Scroll
-            
+
             # Selection (Background)
             if focused and selection_start is not None:
                  start = min(cursor_pos, selection_start)
                  end = max(cursor_pos, selection_start)
-                 
+
                  prefix_w = self.measure_text_width(text[:start], font_path, size)
                  sel_w = self.measure_text_width(text[start:end], font_path, size)
-                 
-                 sel_rect = sdl2.SDL_Rect(draw_x + prefix_w, draw_y, sel_w, size + 4) 
+
+                 sel_rect = sdl2.SDL_Rect(draw_x + prefix_w, draw_y, sel_w, size + 4)
                  sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, 50, 150, 255, 128)
                  sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, ctypes.byref(sel_rect))
 
             # Text (Foreground)
             self._render_simple_text(text, draw_x, draw_y, font_path, size, display_color)
-            
+
             # Cursor
             if focused:
                  # Blink Logic

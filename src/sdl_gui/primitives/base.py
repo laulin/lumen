@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Union, Tuple, List
-from sdl_gui import core, context
+from typing import Any, Dict, List, Tuple, Union
+
+from sdl_gui import context, core
+
 
 class BasePrimitive(ABC):
     """Abstract base class for all display primitives."""
 
-    def __init__(self, 
-                 x: Union[int, str], 
-                 y: Union[int, str], 
-                 width: Union[int, str], 
+    def __init__(self,
+                 x: Union[int, str],
+                 y: Union[int, str],
+                 width: Union[int, str],
                  height: Union[int, str],
                  padding: Union[int, str, Tuple[int, int, int, int], List[int]] = (0, 0, 0, 0),
                  margin: Union[int, str, Tuple[int, int, int, int], List[int]] = (0, 0, 0, 0),
@@ -23,7 +25,7 @@ class BasePrimitive(ABC):
         self.id = id
         self.listen_events = listen_events or []
         self.extra: Dict[str, Any] = {}
-        
+
         # Implicit parenting
         parent = context.get_current_parent()
         if parent and hasattr(parent, 'add_child'):
@@ -63,20 +65,20 @@ class BasePrimitive(ABC):
             data[core.KEY_ID] = self.id
         if self.listen_events:
             data[core.KEY_LISTEN_EVENTS] = self.listen_events
-        
+
         # Merge extra properties (e.g. background color)
         data.update(self.extra)
-        
+
         return data
 
-    
+
     # Registry of allowed style properties to validation/mapping logic if needed
     # For now, just a set of allowed names.
     ALLOWED_PROPERTIES = {
-        'radius', 
-        'border_width', 
-        'border_color', 
-        'color', 
+        'radius',
+        'border_width',
+        'border_color',
+        'color',
         'background_color', # Maps to color
         'margin',
         'padding'
@@ -89,7 +91,7 @@ class BasePrimitive(ABC):
         """
         if name.startswith("set_"):
             prop_name = name[4:]
-            
+
             if prop_name in self.ALLOWED_PROPERTIES:
                 # Helper to handle the actual setting
                 def setter(*args):
@@ -103,7 +105,7 @@ class BasePrimitive(ABC):
                         val = args[0]
                     else:
                         val = args # tuple
-                    
+
                     # Normalize Color
                     if key in ('color', 'background_color', 'border_color'):
                          if isinstance(val, (tuple, list)):
@@ -111,14 +113,14 @@ class BasePrimitive(ABC):
                                  val = (val[0], val[1], val[2], 255)
                              elif len(val) == 4:
                                  val = tuple(val)
-                     
+
                     self.extra[key] = val
                     return self
-                    
+
                 return setter
             else:
                  raise AttributeError(f"Property '{prop_name}' is not allowed or does not exist.")
-        
+
         # Default behavior for other attributes
         raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 

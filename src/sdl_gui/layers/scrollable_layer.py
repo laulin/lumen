@@ -1,11 +1,13 @@
-from typing import List, Dict, Any, Union
+from typing import Any, Dict, List, Union
+
 from sdl_gui import core
 from sdl_gui.layers.layer import Layer
 
+
 class ScrollableLayer(Layer):
     """A layer that can be scrolled."""
-    
-    def __init__(self, x: Union[int, str], y: Union[int, str], 
+
+    def __init__(self, x: Union[int, str], y: Union[int, str],
                  width: Union[int, str], height: Union[int, str],
                  scroll_y: int = 0,
                  content_height: int = 0,

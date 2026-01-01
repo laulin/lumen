@@ -1,41 +1,44 @@
 
+import ctypes
+from typing import Any, Dict, List
+
 import sdl2
 import sdl2.ext
-import ctypes
-from typing import List, Dict, Any, Tuple
-from sdl_gui import core, context
-from sdl_gui.window.renderer import Renderer
-from sdl_gui.window.debug import Debug
+
+from sdl_gui import context, core
 from sdl_gui.debug.server import DebugServer
+from sdl_gui.window.debug import Debug
+from sdl_gui.window.renderer import Renderer
+
 
 class Window:
     """SDL Window wrapper that delegates rendering and debug to sub-components."""
-    
+
     def __init__(self, title: str, width: int, height: int, debug: bool = False, renderer_flags: int = sdl2.SDL_RENDERER_ACCELERATED):
         sdl2.ext.init()
-        
+
         self.window = sdl2.ext.Window(title, size=(width, height), flags=sdl2.SDL_WINDOW_RESIZABLE)
-        
+
         # Sub-components
         self.renderer = Renderer(self.window, flags=renderer_flags)
         self.debug_system = Debug(enabled=debug)
-        
+
         # Debug Server
         self.debug_server: DebugServer = None
         if debug:
             self.debug_server = DebugServer()
             self.debug_server.start()
-        
+
         # State
         self.width = width
         self.height = height
         self.focused_element_id = None
         self.mouse_capture_id = None
-        
+
         sdl2.SDL_StartTextInput()
 
     def __enter__(self):
-        """Enter context: return self and potentially set self as a context root."""      
+        """Enter context: return self and potentially set self as a context root."""
         context.push_parent(self)
         return self
 
@@ -49,7 +52,7 @@ class Window:
         if not hasattr(self, 'root_children'):
             self.root_children = []
         self.root_children.append(child)
-        
+
     def get_root_display_list(self) -> List[Dict[str, Any]]:
         """Helper to get data from root children if used in retained mode way."""
         if hasattr(self, 'root_children'):
@@ -71,10 +74,10 @@ class Window:
     def render(self, display_list: List[Dict[str, Any]]) -> None:
         """Render the display list."""
         self.renderer.clear()
-        
+
         # Render main content
         self.renderer.render_list(display_list)
-        
+
         # Update and Render Debug
         self.debug_system.update()
         self.debug_system.render(self.renderer)
@@ -88,10 +91,10 @@ class Window:
         """
         sdl_events = sdl2.ext.get_events()
         ui_events = []
-        
+
         # Always emit Tick
         ui_events.append({"type": core.EVENT_TICK, "ticks": sdl2.SDL_GetTicks()})
-        
+
         # Process Debug Server Actions
         if self.debug_server:
             for action_type, data in self.debug_server.get_pending_actions():
@@ -102,8 +105,8 @@ class Window:
                     if val == "quit":
                         ui_events.append({"type": core.EVENT_QUIT})
                     else:
-                        self._handle_debug_command(data)
-        
+                        self._handle_debug_command(data, ui_events)
+
         for event in sdl_events:
             # Handle Quit
             if event.type == sdl2.SDL_QUIT:
@@ -116,11 +119,11 @@ class Window:
             # Handle Click (Down)
             elif event.type == sdl2.SDL_MOUSEBUTTONDOWN:
                 self._handle_click(event, ui_events)
-                
+
             # Handle Mouse Up
             elif event.type == sdl2.SDL_MOUSEBUTTONUP:
                 self._handle_mouse_up(event, ui_events)
-                
+
             # Handle Mouse Motion
             elif event.type == sdl2.SDL_MOUSEMOTION:
                 self._handle_mouse_motion(event, ui_events)
@@ -146,14 +149,17 @@ class Window:
 
         return ui_events
 
+
+
     def _handle_scroll(self, event, ui_events):
         x, y = ctypes.c_int(0), ctypes.c_int(0)
         sdl2.mouse.SDL_GetMouseState(ctypes.byref(x), ctypes.byref(y))
         mx, my = x.value, y.value
-        
+        self._process_scroll(mx, my, event.wheel.y, ui_events)
+
+    def _process_scroll(self, mx, my, dy, ui_events):
         scroll_target = self._find_hit(mx, my, core.EVENT_SCROLL)
         if scroll_target:
-            dy = event.wheel.y
             ui_events.append({
                 "type": core.EVENT_SCROLL,
                 "target": scroll_target.get(core.KEY_ID),
@@ -163,12 +169,14 @@ class Window:
 
     def _handle_click(self, event, ui_events):
         mx, my = event.button.x, event.button.y
-        
+        self._process_mouse_down(mx, my, ui_events)
+
+    def _process_mouse_down(self, mx, my, ui_events):
         # Check for focusable item first (Input)
         # We check if we clicked on something that listens to FOCUS
         focus_target = self._find_hit(mx, my, core.EVENT_FOCUS)
         new_focus_id = focus_target.get(core.KEY_ID) if focus_target else None
-        
+
         if new_focus_id != self.focused_element_id:
             # Blur old
             if self.focused_element_id:
@@ -177,10 +185,10 @@ class Window:
             if new_focus_id:
                 ui_events.append({"type": core.EVENT_FOCUS, "target": new_focus_id})
             self.focused_element_id = new_focus_id
-            
+
         # Standard Click Handling
         clicked_item = self._find_hit(mx, my, core.EVENT_CLICK)
-        
+
         # Capture Mouse
         self.mouse_capture_id = None
         if clicked_item:
@@ -199,51 +207,57 @@ class Window:
                     rect = self._get_item_rect(clicked_item)
                     local_x = mx - rect[0] if rect else 0
                     local_y = my - rect[1] if rect else 0
-                    
+
                     ui_events.append({
                         "type": core.EVENT_CLICK,
                         "target": item_id,
                         "local_x": local_x,
                         "local_y": local_y
                     })
-    
+
     def _handle_mouse_up(self, event, ui_events):
         mx, my = event.button.x, event.button.y
+        self._process_mouse_up(mx, my, ui_events)
+
+    def _process_mouse_up(self, mx, my, ui_events):
         target_id = None
         item = None
-        
+
         if self.mouse_capture_id:
             target_id = self.mouse_capture_id
             item, rect = self._find_item_by_id(target_id)
-            
+
         if target_id and item:
             rect = self._get_item_rect(item)
             local_x = mx - rect[0] if rect else 0
             local_y = my - rect[1] if rect else 0
-            
+
             ui_events.append({
                 "type": core.EVENT_MOUSE_UP,
                 "target": target_id,
                 "local_x": local_x,
                 "local_y": local_y
             })
-            
+
         self.mouse_capture_id = None
 
     def _handle_mouse_motion(self, event, ui_events):
         mx, my = event.motion.x, event.motion.y
+        self._process_mouse_motion(mx, my, ui_events)
+
+    def _process_mouse_motion(self, mx, my, ui_events):
         target_id = None
         item = None
-        
+
         if self.mouse_capture_id:
             target_id = self.mouse_capture_id
             item, rect = self._find_item_by_id(target_id)
-        
+
         if target_id and item:
              rect = self._get_item_rect(item)
              local_x = mx - rect[0] if rect else 0
              local_y = my - rect[1] if rect else 0
-             
+
              ui_events.append({
                  "type": core.EVENT_MOUSE_MOTION,
                  "target": target_id,
@@ -278,7 +292,7 @@ class Window:
                     return item
         return None
 
-    def _handle_debug_command(self, data: Dict[str, Any]) -> None:
+    def _handle_debug_command(self, data: Dict[str, Any], ui_events: List[Dict[str, Any]]) -> None:
         """Handle debug commands that affect the window state."""
         action = data.get("action")
         if action == "resize":
@@ -290,3 +304,17 @@ class Window:
         elif action == "screenshot":
              filename = data.get("filename", "debug_screenshot.bmp")
              self.save_screenshot(filename)
+        elif action == "simulate_click":
+             x, y = data.get("x", 0), data.get("y", 0)
+             self._process_mouse_down(x, y, ui_events)
+             self.mouse_capture_id = None # Check for click release usually?
+             # Simulating a full click usually involves down then up.
+             # For now just down is what starts interactions often.
+             # Better: simulate_mouse_down, simulate_mouse_up
+        elif action == "mouse_down":
+             self._process_mouse_down(data.get("x",0), data.get("y",0), ui_events)
+        elif action == "mouse_up":
+             self._process_mouse_up(data.get("x",0), data.get("y",0), ui_events)
+        elif action == "mouse_move":
+             self._process_mouse_motion(data.get("x",0), data.get("y",0), ui_events)
+

@@ -1,12 +1,14 @@
-from typing import Tuple, List, Any, Dict, Union
+from typing import Any, Dict, List, Tuple, Union
+
 from sdl_gui import core
 from sdl_gui.primitives.base import BasePrimitive
 
+
 class Rectangle(BasePrimitive):
     """A basic rectangle primitive."""
-    
-    
-    def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str], 
+
+
+    def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str],
                  color: Tuple[int, int, int, int],
                  radius: int = 0,
                  border_color: Tuple[int, int, int, int] = None,

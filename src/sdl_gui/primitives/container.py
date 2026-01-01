@@ -1,6 +1,8 @@
-from typing import Any, Union, List, Tuple
+from typing import Any
+
 from sdl_gui import context
 from sdl_gui.primitives.base import BasePrimitive
+
 
 class Container(BasePrimitive):
     """
@@ -8,7 +10,7 @@ class Container(BasePrimitive):
     Implements context manager support to automatically add children
     created within its context.
     """
-    
+
     def __enter__(self):
         context.push_parent(self)
         return self

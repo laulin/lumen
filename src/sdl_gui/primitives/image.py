@@ -1,16 +1,18 @@
-from typing import Tuple, List, Any, Dict, Union, Callable
+from typing import Any, Callable, Dict, List, Tuple, Union
+
 from sdl_gui import core
 from sdl_gui.primitives.base import BasePrimitive
 
+
 class Image(BasePrimitive):
     """An image primitive."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  source: Union[str, bytes, Callable],
-                 x: Union[int, str], 
-                 y: Union[int, str], 
-                 width: Union[int, str], 
-                 height: Union[int, str], 
+                 x: Union[int, str],
+                 y: Union[int, str],
+                 width: Union[int, str],
+                 height: Union[int, str],
                  scale_mode: str = "fit",
                  padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
                  margin: Tuple[int, int, int, int] = (0, 0, 0, 0),

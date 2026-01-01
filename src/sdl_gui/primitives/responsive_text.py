@@ -1,11 +1,13 @@
-from typing import Tuple, List, Any, Dict, Union
+from typing import Any, Dict, List, Tuple, Union
+
 from sdl_gui import core
 from sdl_gui.primitives.base import BasePrimitive
 
+
 class ResponsiveText(BasePrimitive):
     """A responsive text primitive."""
-    
-    def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str], 
+
+    def __init__(self, x: Union[int, str], y: Union[int, str], width: Union[int, str], height: Union[int, str],
                  text: str,
                  font: str = None,
                  size: Union[int, str] = 16,

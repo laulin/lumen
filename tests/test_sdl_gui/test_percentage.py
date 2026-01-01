@@ -1,7 +1,9 @@
 import unittest
-from sdl_gui.primitives.rectangle import Rectangle
-from sdl_gui.layers.layer import Layer
+
 from sdl_gui import core
+from sdl_gui.layers.layer import Layer
+from sdl_gui.primitives.rectangle import Rectangle
+
 
 class TestPercentageSupport(unittest.TestCase):
     def test_rectangle_accepts_strings(self):

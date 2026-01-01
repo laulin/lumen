@@ -1,7 +1,9 @@
 
 import unittest
-from sdl_gui.primitives.base import BasePrimitive
+
 from sdl_gui import core
+from sdl_gui.primitives.base import BasePrimitive
+
 
 class MockPrimitive(BasePrimitive):
     def to_data(self):
@@ -16,8 +18,8 @@ class TestBasePrimitiveSetters(unittest.TestCase):
         self.assertEqual(self.prim.extra[core.KEY_RADIUS], 10)
 
     def test_generic_setter_valid_tuple_value(self):
-        # Color typically passed as expanded args in previous plan, 
-        # but generic setter handles *args. 
+        # Color typically passed as expanded args in previous plan,
+        # but generic setter handles *args.
         # If we call set_border_color(1, 2, 3, 4) -> args=(1,2,3,4) -> value=(1,2,3,4)
         self.prim.set_border_color(255, 0, 0, 255)
         self.assertEqual(self.prim.extra[core.KEY_BORDER_COLOR], (255, 0, 0, 255))

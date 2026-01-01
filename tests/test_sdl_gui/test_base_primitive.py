@@ -1,6 +1,8 @@
 import unittest
+from typing import Any, Dict
+
 from sdl_gui.primitives.base import BasePrimitive
-from typing import Dict, Any
+
 
 class ConcretePrimitive(BasePrimitive):
     def to_data(self) -> Dict[str, Any]:
@@ -17,7 +19,7 @@ class TestBasePrimitive(unittest.TestCase):
 
     def test_init_custom(self):
         """Test initialization with custom padding/margin."""
-        p = ConcretePrimitive(x=0, y=0, width=100, height=100, 
+        p = ConcretePrimitive(x=0, y=0, width=100, height=100,
                             padding=(1, 2, 3, 4), margin=(5, 6, 7, 8))
         self.assertEqual(p.padding, (1, 2, 3, 4))
         self.assertEqual(p.margin, (5, 6, 7, 8))
