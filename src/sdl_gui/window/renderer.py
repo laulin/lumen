@@ -72,6 +72,8 @@ class Renderer:
         item_type = item.get(core.KEY_TYPE)
         if item_type == core.TYPE_TEXT:
             self._render_text(item, rect)
+        elif item_type == core.TYPE_INPUT:
+            self._render_input(item, rect)
         self._flush_render_queue()
 
     def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
@@ -108,6 +110,8 @@ class Renderer:
             self._render_text(item, current_rect)
         elif item_type == core.TYPE_IMAGE:
             self._render_image(item, current_rect)
+        elif item_type == core.TYPE_INPUT:
+            self._render_input(item, current_rect)
 
     def _flush_render_queue(self):
         if not self._render_queue: return
@@ -266,6 +270,8 @@ class Renderer:
         elif typ == core.TYPE_IMAGE:
              self._flush_render_queue()
              self._render_image(item, rect)
+        elif typ == core.TYPE_INPUT:
+             self._render_input(item, rect)
 
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
@@ -657,3 +663,192 @@ class Renderer:
         
         if not texture or texture.size[0] == 0: return 0
         return int(texture.size[1] * (width / texture.size[0]))
+
+    def measure_text_width(self, text: str, font_path: str = None, font_size: int = 16) -> int:
+        """Public helper to measure text width for a given configuration."""
+        if not text: return 0
+        font_path = font_path or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        fm = self._get_font_manager(font_path, font_size, (0,0,0,0)) # color doesn't matter for size
+        if fm:
+             s = fm.render(text)
+             return s.w if s else 0
+        return 0
+
+    def _render_input(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        self._flush_render_queue()
+        x, y, w, h = rect
+        
+        # 1. Draw Background & Border
+        rect_item = item.copy()
+        rect_item[core.KEY_COLOR] = item.get("background_color", (255, 255, 255, 255))
+        self._draw_rect_primitive(rect_item, rect)
+        
+        # 2. Content Area
+        raw_pad = item.get(core.KEY_PADDING, (5, 5, 5, 5))
+        pt = self._resolve_val(raw_pad[0], h)
+        pl = self._resolve_val(raw_pad[3], w)
+        pr = self._resolve_val(raw_pad[1], w)
+        pb = self._resolve_val(raw_pad[2], h)
+        
+        content_x = x + pl
+        content_y = y + pt
+        content_w = max(0, w - pl - pr)
+        content_h = max(0, h - pt - pb)
+        
+        # Clipping
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, sdl2.SDL_Rect(content_x, content_y, content_w, content_h))
+        
+        text = item.get(core.KEY_TEXT, "")
+        placeholder = item.get("placeholder", "")
+        cursor_pos = item.get("cursor_pos", 0)
+        focused = item.get("focused", False)
+        selection_start = item.get("selection_start")
+        
+        scroll_x = item.get("scroll_x", 0)
+        scroll_y = item.get("scroll_y", 0)
+        multiline = item.get("multiline", False)
+        
+        font_path = item.get(core.KEY_FONT)
+        size = item.get(core.KEY_FONT_SIZE, 16)
+        color = item.get(core.KEY_COLOR, (0,0,0,255))
+        
+        # Adjust start position by scroll
+        draw_x = content_x - scroll_x
+        draw_y = content_y - scroll_y
+        
+        display_text = text if text else placeholder
+        display_color = color if text else (150, 150, 150, 255)
+
+        if not text and not focused:
+             if multiline:
+                 # Multiline Placeholder
+                 lines = placeholder.split('\n')
+                 curr_ly = draw_y
+                 line_h = size + 4
+                 for line in lines:
+                      self._render_simple_text(line, draw_x, curr_ly, font_path, size, display_color)
+                      curr_ly += line_h
+             else:
+                 self._render_simple_text(display_text, draw_x, draw_y, font_path, size, display_color)
+                 
+             sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+             return
+
+        # Render Text & Cursor
+        if multiline:
+            # Simple Multiline Rendering
+            # We split by \n and draw lines. 
+            # Cursor positioning in multiline is complex for rendering (finding x,y of index).
+            # For this iteration, we iterate to find cursor line/col.
+            
+            lines = text.split('\n')
+            
+            # Find Cursor Line/Col
+            curr_idx = 0
+            cursor_line_idx = 0
+            cursor_col_idx = 0
+            found_cursor = False
+            
+            for i, line in enumerate(lines):
+                line_len = len(line) + 1 # +1 for newline char
+                if not found_cursor:
+                    if curr_idx + line_len > cursor_pos:
+                         cursor_line_idx = i
+                         cursor_col_idx = cursor_pos - curr_idx
+                         found_cursor = True
+                    elif curr_idx + line_len == cursor_pos and i == len(lines)-1:
+                         # End of last line
+                         cursor_line_idx = i
+                         cursor_col_idx = len(line)
+                         found_cursor = True
+                curr_idx += line_len
+            
+            # Draw Lines & Selection
+            line_h = size + 4 
+            curr_ly = draw_y
+            
+            # Global index tracker
+            curr_char_idx = 0
+            
+            for i, line in enumerate(lines):
+                line_len = len(line)
+                line_end_idx = curr_char_idx + line_len # exclusive of newline
+                
+                # Render Selection for this line (Background)
+                if focused and selection_start is not None:
+                     sel_min = min(cursor_pos, selection_start)
+                     sel_max = max(cursor_pos, selection_start)
+                     
+                     l_start = max(sel_min, curr_char_idx)
+                     l_end = min(sel_max, line_end_idx + 1)
+                     
+                     if l_start < l_end:
+                         rel_start = l_start - curr_char_idx
+                         rel_end = l_end - curr_char_idx
+                         
+                         measure_end = min(rel_end, len(line))
+                         
+                         px_start = self.measure_text_width(line[:rel_start], font_path, size)
+                         px_end = self.measure_text_width(line[:measure_end], font_path, size)
+                         
+                         sel_w = px_end - px_start
+                         if rel_end > len(line):
+                             sel_w += 10 
+                         
+                         sel_rect = sdl2.SDL_Rect(draw_x + px_start, curr_ly, sel_w, size + 4)
+                         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, 50, 150, 255, 128)
+                         sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, ctypes.byref(sel_rect))
+
+                # Render Text (Foreground)
+                self._render_simple_text(line, draw_x, curr_ly, font_path, size, display_color)
+                
+                # Cursor (if on this line)
+                if focused and i == cursor_line_idx:
+                    # Blink Logic
+                    if (sdl2.SDL_GetTicks() // 500) % 2 == 0:
+                        cx = draw_x + self.measure_text_width(line[:cursor_col_idx], font_path, size)
+                        sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, *color)
+                        sdl2.SDL_RenderDrawLine(self.renderer.sdlrenderer, cx, curr_ly, cx, curr_ly + size + 2)
+                    
+                curr_ly += line_h
+                curr_char_idx += line_len + 1 # +1 for newline
+                
+        else:
+            # Single Line with Scroll
+            
+            # Selection (Background)
+            if focused and selection_start is not None:
+                 start = min(cursor_pos, selection_start)
+                 end = max(cursor_pos, selection_start)
+                 
+                 prefix_w = self.measure_text_width(text[:start], font_path, size)
+                 sel_w = self.measure_text_width(text[start:end], font_path, size)
+                 
+                 sel_rect = sdl2.SDL_Rect(draw_x + prefix_w, draw_y, sel_w, size + 4) 
+                 sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, 50, 150, 255, 128)
+                 sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, ctypes.byref(sel_rect))
+
+            # Text (Foreground)
+            self._render_simple_text(text, draw_x, draw_y, font_path, size, display_color)
+            
+            # Cursor
+            if focused:
+                 # Blink Logic
+                 if (sdl2.SDL_GetTicks() // 500) % 2 == 0:
+                     cursor_offset = self.measure_text_width(text[:cursor_pos], font_path, size)
+                     cursor_x = draw_x + cursor_offset
+                     sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, *color)
+                     sdl2.SDL_RenderDrawLine(self.renderer.sdlrenderer, cursor_x, draw_y, cursor_x, draw_y + size + 2)
+
+        # Clear Clip
+        self._flush_render_queue()
+        sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+
+    def _render_simple_text(self, text, x, y, font, size, color):
+        if not text: return
+        fm = self._get_font_manager(font or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size, color)
+        if fm:
+             s = fm.render(text)
+             if s:
+                 tex = sdl2.ext.Texture(self.renderer, s)
+                 self.renderer.copy(tex, dstrect=(x, y, *tex.size))

@@ -38,3 +38,12 @@ EVENT_SCROLL = "scroll"
 EVENT_HOVER_START = "hover_start"
 EVENT_HOVER_END = "hover_end"
 EVENT_KEY_DOWN = "key_down"
+EVENT_TEXT_INPUT = "text_input"
+EVENT_FOCUS = "focus"
+EVENT_BLUR = "blur"
+
+EVENT_MOUSE_MOTION = "mouse_motion"
+EVENT_MOUSE_UP = "mouse_up"
+EVENT_TICK = "tick"
+
+TYPE_INPUT = "input"

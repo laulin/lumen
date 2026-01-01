@@ -22,6 +22,10 @@ class Window:
         # State
         self.width = width
         self.height = height
+        self.focused_element_id = None
+        self.mouse_capture_id = None
+        
+        sdl2.SDL_StartTextInput()
 
     def __enter__(self):
         """Enter context: return self and potentially set self as a context root."""      
@@ -51,6 +55,10 @@ class Window:
         """Save the current window content to a BMP file."""
         self.renderer.save_screenshot(filename)
 
+    def measure_text_width(self, text: str, font: str = None, size: int = 16) -> int:
+        """Helper to measure text width, used for input processing."""
+        return self.renderer.measure_text_width(text, font, size)
+
     def render(self, display_list: List[Dict[str, Any]]) -> None:
         """Render the display list."""
         self.renderer.clear()
@@ -67,54 +75,172 @@ class Window:
     def get_ui_events(self) -> List[Dict[str, Any]]:
         """
         Process SDL events and translate them into UI events based on hit tests.
-        Returns a list of high-level UI events (e.g. {'type': 'click', 'target': 'id'}).
+        Returns a list of high-level UI events.
         """
         sdl_events = sdl2.ext.get_events()
         ui_events = []
+        
+        # Always emit Tick
+        ui_events.append({"type": core.EVENT_TICK, "ticks": sdl2.SDL_GetTicks()})
         
         for event in sdl_events:
             # Handle Quit
             if event.type == sdl2.SDL_QUIT:
                 ui_events.append({"type": core.EVENT_QUIT})
 
-            # Handle Scroll (Mouse Wheel)
-            if event.type == sdl2.SDL_MOUSEWHEEL:
-                x, y = ctypes.c_int(0), ctypes.c_int(0)
-                sdl2.mouse.SDL_GetMouseState(ctypes.byref(x), ctypes.byref(y))
-                mx, my = x.value, y.value
+            # Handle Scroll
+            elif event.type == sdl2.SDL_MOUSEWHEEL:
+                self._handle_scroll(event, ui_events)
+
+            # Handle Click (Down)
+            elif event.type == sdl2.SDL_MOUSEBUTTONDOWN:
+                self._handle_click(event, ui_events)
                 
-                scroll_target = self._find_hit(mx, my, core.EVENT_SCROLL)
-                if scroll_target:
-                    dy = event.wheel.y
-                    # Standard behavior: Wheel UP (pos) -> Move content DOWN (pos delta for logic usually? depends on handler)
-                    # We pass the delta from SDL.
+            # Handle Mouse Up
+            elif event.type == sdl2.SDL_MOUSEBUTTONUP:
+                self._handle_mouse_up(event, ui_events)
+                
+            # Handle Mouse Motion
+            elif event.type == sdl2.SDL_MOUSEMOTION:
+                self._handle_mouse_motion(event, ui_events)
+
+            # Handle Text Input
+            elif event.type == sdl2.SDL_TEXTINPUT:
+                if self.focused_element_id:
+                     ui_events.append({
+                         "type": core.EVENT_TEXT_INPUT,
+                         "target": self.focused_element_id,
+                         "text": event.text.text.decode('utf-8')
+                     })
+
+            # Handle Key Down
+            elif event.type == sdl2.SDL_KEYDOWN:
+                if self.focused_element_id:
                     ui_events.append({
-                        "type": core.EVENT_SCROLL,
-                        "target": scroll_target.get(core.KEY_ID),
-                        "delta": dy,
-                        "current_scroll_y": scroll_target.get(core.KEY_SCROLL_Y, 0)
+                        "type": core.EVENT_KEY_DOWN,
+                        "target": self.focused_element_id,
+                        "key_sym": event.key.keysym.sym,
+                        "mod": event.key.keysym.mod
                     })
 
-            # Handle Click
-            if event.type == sdl2.SDL_MOUSEBUTTONDOWN:
-                mx, my = event.button.x, event.button.y
-                clicked_item = self._find_hit(mx, my, core.EVENT_CLICK)
-                
-                if clicked_item:
-                    if clicked_item.get("type") == "link":
-                         ui_events.append({
-                             "type": core.EVENT_LINK_CLICK,
-                             "target": clicked_item.get("target")
-                         })
-                    else:
-                        item_id = clicked_item.get(core.KEY_ID)
-                        if item_id:
-                            ui_events.append({
-                                "type": core.EVENT_CLICK,
-                                "target": item_id
-                            })
-
         return ui_events
+
+    def _handle_scroll(self, event, ui_events):
+        x, y = ctypes.c_int(0), ctypes.c_int(0)
+        sdl2.mouse.SDL_GetMouseState(ctypes.byref(x), ctypes.byref(y))
+        mx, my = x.value, y.value
+        
+        scroll_target = self._find_hit(mx, my, core.EVENT_SCROLL)
+        if scroll_target:
+            dy = event.wheel.y
+            ui_events.append({
+                "type": core.EVENT_SCROLL,
+                "target": scroll_target.get(core.KEY_ID),
+                "delta": dy,
+                "current_scroll_y": scroll_target.get(core.KEY_SCROLL_Y, 0)
+            })
+
+    def _handle_click(self, event, ui_events):
+        mx, my = event.button.x, event.button.y
+        
+        # Check for focusable item first (Input)
+        # We check if we clicked on something that listens to FOCUS
+        focus_target = self._find_hit(mx, my, core.EVENT_FOCUS)
+        new_focus_id = focus_target.get(core.KEY_ID) if focus_target else None
+        
+        if new_focus_id != self.focused_element_id:
+            # Blur old
+            if self.focused_element_id:
+                ui_events.append({"type": core.EVENT_BLUR, "target": self.focused_element_id})
+            # Focus new
+            if new_focus_id:
+                ui_events.append({"type": core.EVENT_FOCUS, "target": new_focus_id})
+            self.focused_element_id = new_focus_id
+            
+        # Standard Click Handling
+        clicked_item = self._find_hit(mx, my, core.EVENT_CLICK)
+        
+        # Capture Mouse
+        self.mouse_capture_id = None
+        if clicked_item:
+            self.mouse_capture_id = clicked_item.get(core.KEY_ID)
+
+        if clicked_item:
+            if clicked_item.get("type") == "link":
+                 ui_events.append({
+                     "type": core.EVENT_LINK_CLICK,
+                     "target": clicked_item.get("target")
+                 })
+            else:
+                item_id = clicked_item.get(core.KEY_ID)
+                if item_id:
+                    # Calculate local X/Y for Input cursor positioning
+                    rect = self._get_item_rect(clicked_item)
+                    local_x = mx - rect[0] if rect else 0
+                    local_y = my - rect[1] if rect else 0
+                    
+                    ui_events.append({
+                        "type": core.EVENT_CLICK,
+                        "target": item_id,
+                        "local_x": local_x,
+                        "local_y": local_y
+                    })
+    
+    def _handle_mouse_up(self, event, ui_events):
+        mx, my = event.button.x, event.button.y
+        target_id = None
+        item = None
+        
+        if self.mouse_capture_id:
+            target_id = self.mouse_capture_id
+            item, rect = self._find_item_by_id(target_id)
+            
+        if target_id and item:
+            rect = self._get_item_rect(item)
+            local_x = mx - rect[0] if rect else 0
+            local_y = my - rect[1] if rect else 0
+            
+            ui_events.append({
+                "type": core.EVENT_MOUSE_UP,
+                "target": target_id,
+                "local_x": local_x,
+                "local_y": local_y
+            })
+            
+        self.mouse_capture_id = None
+
+    def _handle_mouse_motion(self, event, ui_events):
+        mx, my = event.motion.x, event.motion.y
+        target_id = None
+        item = None
+        
+        if self.mouse_capture_id:
+            target_id = self.mouse_capture_id
+            item, rect = self._find_item_by_id(target_id)
+        
+        if target_id and item:
+             rect = self._get_item_rect(item)
+             local_x = mx - rect[0] if rect else 0
+             local_y = my - rect[1] if rect else 0
+             
+             ui_events.append({
+                 "type": core.EVENT_MOUSE_MOTION,
+                 "target": target_id,
+                 "local_x": local_x,
+                 "local_y": local_y
+             })
+
+    def _find_item_by_id(self, target_id):
+        for r, i in self.renderer.get_hit_list():
+            if i.get(core.KEY_ID) == target_id:
+                return i, r
+        return None, None
+
+    def _get_item_rect(self, item):
+         # Helper to find rect of item from hit list (a bit inefficient but works)
+         for r, i in self.renderer.get_hit_list():
+             if i is item: return r
+         return None
 
     def _find_hit(self, mx: int, my: int, required_event: str) -> Dict[str, Any]:
         """
