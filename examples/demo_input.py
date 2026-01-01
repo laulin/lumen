@@ -6,7 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from sdl_gui.window.window import Window
 from sdl_gui import core
-from sdl_gui.primitives import Input, ResponsiveText, Rectangle
+from sdl_gui.primitives import Input, ResponsiveText, Rectangle, Container
 import sdl2.ext
 
 def main():
@@ -56,10 +56,19 @@ def main():
     
     window.root_children = [] # Reset for clarity of this block code reuse
     with window:
-         Rectangle(0, 0, width, height, color=(240, 240, 240))
-         ResponsiveText(20, 20, 760, 40, "Input Primitive Demo (SOTA)", size=24, align="center")
-         ResponsiveText(20, 50, 760, 20, "Try: Drag Select, Double Click, Ctrl+Z (Undo), Ctrl+Arrows", size=14, align="center", color=(80,80,80))
+         ResponsiveText(20, 20, 760, 40, "Input Primitive Demo (SOTA & Versatile)", size=24, align="center")
+         ResponsiveText(20, 50, 760, 20, "Try: Drag Select, Double Click, Ctrl+Z (Undo), Ctrl+Arrows, Styled Inputs", size=14, align="center", color=(80,80,80))
          
+         
+         ResponsiveText(500, 150, 250, 30, "Styled Input (Transparent):", size=16)
+         
+         # A rounded container acting as background
+         # Input inside is transparent
+         # Note: We need absolute coords for primitives for now in this demo structure
+         Rectangle(500, 180, 200, 40, color=(230, 240, 255), radius=20, border_color=(100, 150, 255), border_width=2)
+         inp_style = Input(510, 185, 180, 30, placeholder="Custom Style...", background_color=None, border_width=0, id="input_style")
+         
+         # --- Rest of Standard Inputs ---
          ResponsiveText(50, 80, 200, 30, "Name:", size=18)
          inp_name = Input(50, 110, 300, 40, placeholder="Name", id="input_name")
          
@@ -99,6 +108,7 @@ def main():
                 elif target_id == "input_zip": target = inp_zip
                 elif target_id == "input_scroll": target = inp_scroll
                 elif target_id == "input_bio": target = inp_bio
+                elif target_id == "input_style": target = inp_style
                 
                 if target:
                     target.handle_event(event, context=window)

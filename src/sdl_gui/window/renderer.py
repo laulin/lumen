@@ -139,7 +139,10 @@ class Renderer:
             self._flush_render_queue()
             self._draw_aa_rounded_box(rect, radius, color)
         else:
-             if self._render_queue_color == color:
+             # Skip fill if fully transparent
+             if color[3] == 0:
+                 pass
+             elif self._render_queue_color == color:
                  self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
              else:
                  self._flush_render_queue()
@@ -680,7 +683,10 @@ class Renderer:
         
         # 1. Draw Background & Border
         rect_item = item.copy()
-        rect_item[core.KEY_COLOR] = item.get("background_color", (255, 255, 255, 255))
+        bg_color = item.get("background_color")
+        if not bg_color: bg_color = (0,0,0,0)
+        rect_item[core.KEY_COLOR] = bg_color
+        
         self._draw_rect_primitive(rect_item, rect)
         
         # 2. Content Area

@@ -1,4 +1,4 @@
-from typing import Tuple, List, Any, Dict, Union, Callable
+from typing import Tuple, List, Any, Dict, Union, Callable, Optional
 from sdl_gui import core
 from sdl_gui.primitives.base import BasePrimitive
 import sdl2
@@ -12,7 +12,7 @@ class Input(BasePrimitive):
                  font: str = None,
                  size: Union[int, str] = 16,
                  color: Tuple[int, int, int, int] = (0, 0, 0, 255),
-                 background_color: Tuple[int, int, int, int] = (255, 255, 255, 255),
+                 background_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 255),
                  border_color: Tuple[int, int, int, int] = (0, 0, 0, 255),
                  border_width: int = 1,
                  radius: int = 0,
