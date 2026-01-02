@@ -693,9 +693,9 @@ class Renderer:
              self._draw_rect_primitive(rect_item, rect)
         else:
              if len(bg_color) == 4 and bg_color[3] > 0:
-                 # Ensure ints
                  ix, iy, iw, ih = int(rect[0]), int(rect[1]), int(rect[2]), int(rect[3])
-                 self.renderer.fill((ix, iy, iw, ih), bg_color)
+                 fill_color = sdl2.ext.Color(*bg_color)
+                 self.renderer.fill((ix, iy, iw, ih), fill_color)
 
              self._draw_border(rect_item, rect, radius)
 
