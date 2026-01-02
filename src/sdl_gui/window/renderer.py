@@ -1,5 +1,6 @@
 
 import ctypes
+import threading
 from typing import Any, Callable, Dict, List, Tuple, Union
 
 import sdl2
@@ -34,6 +35,9 @@ class Renderer:
         self._last_window_size = (0, 0)
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
 
+        self._last_display_list: List[Dict[str, Any]] = []
+        self._display_list_lock = threading.Lock()
+
     def clear(self, color=(0, 0, 0, 0)):
         r, g, b, a = color
         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
@@ -45,6 +49,32 @@ class Renderer:
 
     def get_hit_list(self) -> List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]]:
         return self._hit_list
+
+    def get_last_display_list(self) -> List[Dict[str, Any]]:
+        """Return a JSON-serializable copy of the last rendered display list."""
+        with self._display_list_lock:
+            return self._sanitize_list(self._last_display_list)
+
+    def _sanitize_list(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [self._sanitize_item(item) for item in items]
+
+    def _sanitize_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert non-serializable items to strings/serializable values."""
+        sanitized = {}
+        for k, v in item.items():
+            if k == core.KEY_CHILDREN and isinstance(v, list):
+                sanitized[k] = self._sanitize_list(v)
+            elif isinstance(v, (bytes, bytearray)):
+                sanitized[k] = f"<bytes: {len(v)}>"
+            elif callable(v):
+                sanitized[k] = f"<callable: {v.__name__ if hasattr(v, '__name__') else 'anonymous'}>"
+            elif isinstance(v, (tuple, list)):
+                sanitized[k] = list(v)
+            elif isinstance(v, (int, float, str, bool)) or v is None:
+                sanitized[k] = v
+            else:
+                sanitized[k] = str(v)
+        return sanitized
 
     def save_screenshot(self, filename: str) -> None:
         w, h = self.window.size
@@ -64,6 +94,10 @@ class Renderer:
         if (width, height) != self._last_window_size:
              self._measurement_cache = {}
              self._last_window_size = (width, height)
+
+        # Store for debug dump
+        with self._display_list_lock:
+            self._last_display_list = display_list
 
         for item in display_list:
             self._render_item(item, root_rect)

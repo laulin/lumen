@@ -27,6 +27,7 @@ class Window:
         self.debug_server: DebugServer = None
         if debug:
             self.debug_server = DebugServer()
+            self.debug_server.display_list_provider = self.renderer.get_last_display_list
             self.debug_server.start()
 
         # State

@@ -6,7 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../src"))
 
 from sdl_gui.window.window import Window
 from sdl_gui import core
-from sdl_gui.primitives import Input, ResponsiveText, Rectangle, Container
+from sdl_gui.primitives import Input, ResponsiveText, Rectangle
 import sdl2.ext
 
 def main():
@@ -43,17 +43,7 @@ def main():
         
         # Output label
         output_label = ResponsiveText(50, 450, 700, 40, "Status: Ready", color=(100, 100, 100))
-        
-        # We need a way to hook listeners. For demo we can iterate root children if we had refs,
-        # but here we rely on ID lookups in loop or just manual binding if we kept vars.
-        # Since we didn't keep vars in scope (implicit parenting), let's just find them by ID in loop if needed,
-        # or better: we can't easily attach callbacks without refs.
-        # Let's fix the demo to keep refs.
-        
-    # Re-access children to attach callbacks (Hack for demo simplicity vs structure)
-    # Ideally we keep refs.
-    # Let's reconstruct inputs with refs.
-    
+            
     window.root_children = [] # Reset for clarity of this block code reuse
     with window:
          # Background

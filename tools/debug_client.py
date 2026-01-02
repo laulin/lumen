@@ -30,20 +30,40 @@ class DebugClient:
         payload = {"type": "event", "event": evt}
         self._send(payload)
 
+    def dump_display_list(self):
+        payload = {"type": "dump_display_list"}
+        self._send(payload)
+
     def _send(self, payload):
         try:
             data = json.dumps(payload) + "\n"
             self.sock.sendall(data.encode('utf-8'))
-            resp = self._recv_response()
-            print(f"Response: {resp}")
+            resp_str = self._recv_response()
+            if resp_str:
+                resp = json.loads(resp_str)
+                if "data" in resp:
+                    print(f"Status: {resp.get('status')}")
+                    print("Data:")
+                    print(json.dumps(resp["data"], indent=2))
+                else:
+                    print(f"Response: {resp}")
+            else:
+                print("No response received")
         except Exception as e:
             print(f"Error sending/receiving: {e}")
 
     def _recv_response(self):
         # simple line reader
         if not self.sock: return
-        data = self.sock.recv(4096).decode('utf-8')
-        return data.strip()
+        data = b""
+        while True:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+            if b"\n" in data:
+                break
+        return data.decode('utf-8').strip()
 
     def close(self):
         if self.sock: self.sock.close()
@@ -86,6 +106,9 @@ if __name__ == "__main__":
     # Quit
     p_quit = subparsers.add_parser("quit")
 
+    # Dump
+    p_dump = subparsers.add_parser("dump")
+
     args = parser.parse_args()
     client = DebugClient(args.host, args.port)
     client.connect()
@@ -113,5 +136,7 @@ if __name__ == "__main__":
             client.send_event(args.type, **data)
         elif args.command == "quit":
             client.send_command("quit")
+        elif args.command == "dump":
+            client.dump_display_list()
     finally:
         client.close()

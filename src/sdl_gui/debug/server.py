@@ -23,6 +23,7 @@ class DebugServer:
         # Thread-safe queue for commands/events to be consumed by main thread
         # Format: (type_str, data_dict)
         self.command_queue: Queue[Tuple[str, Any]] = Queue()
+        self.display_list_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None
 
     def start(self) -> None:
         """Start the debug server in a separate thread."""
@@ -114,6 +115,16 @@ class DebugServer:
                 self.command_queue.put(("command", payload))
                 self._send_response(conn, "ok")
 
+            elif cmd_type == "dump_display_list":
+                if self.display_list_provider:
+                    try:
+                        data = self.display_list_provider()
+                        self._send_response(conn, "ok", data=data)
+                    except Exception as e:
+                        self._send_response(conn, "error", f"Failed to dump display list: {e}")
+                else:
+                    self._send_response(conn, "error", "Display list provider not set")
+
             else:
                 self._send_response(conn, "error", "Unknown type")
 
@@ -122,10 +133,12 @@ class DebugServer:
         except Exception as e:
             self._send_response(conn, "error", str(e))
 
-    def _send_response(self, conn: socket.socket, status: str, message: str = None) -> None:
+    def _send_response(self, conn: socket.socket, status: str, message: str = None, data: Any = None) -> None:
         resp = {"status": status}
         if message:
             resp["message"] = message
+        if data is not None:
+            resp["data"] = data
         try:
             conn.sendall((json.dumps(resp) + "\n").encode('utf-8'))
         except Exception:
