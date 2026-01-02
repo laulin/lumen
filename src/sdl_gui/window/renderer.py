@@ -8,6 +8,9 @@ import sdl2.ext
 from sdl2 import sdlgfx, sdlttf
 
 from sdl_gui import core, markdown
+from sdl_gui.layout_engine.node import FlexNode
+from sdl_gui.layout_engine.style import FlexStyle
+from sdl_gui.layout_engine.definitions import FlexDirection, JustifyContent, AlignItems, FlexWrap
 
 
 class RawTexture(sdl2.ext.Texture):
@@ -129,12 +132,22 @@ class Renderer:
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
 
-    def render_item_direct(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+    def render_item_direct(self, item: Dict[str, Any], rect: Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]]) -> None:
+        # Cast to int for SDL
+        x, y, w, h = rect
+        rect = (int(x), int(y), int(w), int(h))
         item_type = item.get(core.KEY_TYPE)
         if item_type == core.TYPE_TEXT:
             self._render_text(item, rect)
         elif item_type == core.TYPE_INPUT:
             self._render_input(item, rect)
+        elif item_type == core.TYPE_RECT:
+            self._draw_rect_primitive(item, rect)
+        elif item_type == core.TYPE_IMAGE:
+            self._flush_render_queue()
+            self._render_image(item, rect)
+        elif item_type == core.TYPE_FLEXBOX:
+            self._render_flexbox(item, rect)
         self._flush_render_queue()
 
     def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
@@ -173,6 +186,127 @@ class Renderer:
             self._render_image(item, current_rect)
         elif item_type == core.TYPE_INPUT:
             self._render_input(item, current_rect)
+        elif item_type == core.TYPE_FLEXBOX:
+            self._render_flexbox(item, current_rect, viewport)
+
+    def _render_flexbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
+        """Render a FlexBox item by building a FlexNode tree and resolving layout."""
+        x, y, w, h = rect
+        
+        # 1. Build Flex Tree
+        root_node = self._build_flex_tree(item, w, h)
+        
+        # 2. Calculate Layout
+        # We pass w, h as available space. 
+        # Since we are rendering at 'rect', the root layout should start at x, y?
+        # No, FlexNode calculates relative to (0,0) usually, but we can pass offset.
+        root_node.calculate_layout(w, h, x_offset=x, y_offset=y, force_size=True)
+        
+        # 3. Render Background (if color/border exists)
+        if item.get(core.KEY_COLOR) or item.get(core.KEY_BORDER_COLOR):
+            self._draw_rect_primitive(item, rect)
+            
+        # 4. Render Children using calculated positions
+        self._render_flex_node_children(root_node, item, viewport)
+
+    def _build_flex_tree(self, item: Dict[str, Any], parent_w: int, parent_h: int) -> FlexNode:
+        style = FlexStyle()
+        
+        # Map Flex Properties
+        style.direction = FlexDirection(item.get(core.KEY_FLEX_DIRECTION, "row"))
+        style.justify_content = JustifyContent(item.get(core.KEY_JUSTIFY_CONTENT, "flex_start"))
+        style.align_items = AlignItems(item.get(core.KEY_ALIGN_ITEMS, "stretch"))
+        style.wrap = FlexWrap(item.get(core.KEY_FLEX_WRAP, "nowrap"))
+        style.gap = item.get(core.KEY_GAP, 0)
+        
+        # Map Item Properties
+        style.grow = item.get(core.KEY_FLEX_GROW, 0.0)
+        style.shrink = item.get(core.KEY_FLEX_SHRINK, 1.0)
+        basis = item.get(core.KEY_FLEX_BASIS, "auto")
+        style.basis = basis
+        
+        # Determine Explicit Size if any
+        # This is tricky because item might rely on parent logic.
+        # But here we are building the node for THIS item.
+        # Its w/h in style are essentially constraints or basis.
+        raw_rect = item.get(core.KEY_RECT)
+        if raw_rect:
+            # If explicit rect is set in primitive, use it?
+            # primitive rect is (x,y,w,h).
+            if raw_rect[2] != "auto":
+                 style.width = raw_rect[2] # String check handled by node
+            if raw_rect[3] != "auto":
+                 style.height = raw_rect[3]
+        
+        # Recursively build children
+        node = FlexNode(style)
+        
+        # Important: Link the original item to the node for rendering later
+        node.original_item = item 
+        
+        for child in item.get(core.KEY_CHILDREN, []):
+            # For children, we might not know parent_w/h yet perfectly if we are deep in tree.
+            # But we pass 0 or handling it in _resolve?
+            # Actually, _build_flex_tree DOES NOT resolve sizes. It only sets up Style.
+            # Resolution happens in calculate_layout.
+            child_node = self._build_flex_tree(child, 0, 0)
+            node.add_child(child_node)
+            
+        return node
+
+    def _render_flex_node_children(self, node: FlexNode, item: Dict[str, Any], viewport: Tuple[int, int, int, int] = None):
+        # We need to map node children back to item children.
+        # Since we preserved order, we can iterate.
+        
+        # item['children'] corresponds to node.children
+        # We need to render each child using the computed layout from node.
+        
+        for i, child_node in enumerate(node.children):
+            # Retrieve original item
+            if hasattr(child_node, 'original_item'):
+                 child_item = child_node.original_item
+            else:
+                 continue
+            
+            # Use the computed rect
+            cx, cy, cw, ch = child_node.layout_rect
+            
+            # Check viewport
+            if viewport:
+                 # Simple intersection check
+                 if (cx + cw < viewport[0] or cx > viewport[0] + viewport[2] or
+                     cy + ch < viewport[1] or cy > viewport[1] + viewport[3]):
+                     pass # Skip? No, let's just check standard render viewport logic
+                     # Actually standard render item checks strict intersection?
+            
+            # Recursive render
+            if child_item.get(core.KEY_TYPE) == core.TYPE_FLEXBOX:
+                 # If child is also flexbox, we shouldn't re-calculate layout?
+                 # Wait, we already calculated the entire tree layout in root!
+                 # So we should render it using the computed positions.
+                 # BUT _render_flexbox calls calculate_layout again on root.
+                 # If we call _render_flexbox recursively, we are re-calculating sub-tree!
+                 # Ideally, we should have a `_render_flex_node_tree` method that does not re-calc.
+                 self._render_flex_node_tree_pass(child_node, viewport)
+            else:
+                 # Regular item (Text, Image, Rect...)
+                 # We treat it as a leaf?
+                 # But standard primitives expect _render_item to resolve their rect?
+                 # _render_item takes (parent_rect) and resolves offsets.
+                 # HERE we have absolute rect for the child.
+                 # So we should call a method that accepts absolute rect.
+                 self.render_item_direct(child_item, (cx, cy, cw, ch))
+
+    def _render_flex_node_tree_pass(self, node: FlexNode, viewport: Tuple[int, int, int, int]):
+         # Render the node itself (background)
+         item = getattr(node, 'original_item', {})
+         x, y, w, h = node.layout_rect
+         rect = (int(x), int(y), int(w), int(h))
+         
+         if item.get(core.KEY_COLOR):
+             self._draw_rect_primitive(item, rect)
+             
+         self._render_flex_node_children(node, item, viewport)
 
     def _flush_render_queue(self):
         if not self._render_queue: return

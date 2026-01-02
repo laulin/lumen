@@ -46,4 +46,16 @@ EVENT_MOUSE_MOTION = "mouse_motion"
 EVENT_MOUSE_UP = "mouse_up"
 EVENT_TICK = "tick"
 
+
 TYPE_INPUT = "input"
+TYPE_FLEXBOX = "flexbox"
+
+# Flexbox Keys
+KEY_FLEX_DIRECTION = "flex_direction"
+KEY_JUSTIFY_CONTENT = "justify_content"
+KEY_ALIGN_ITEMS = "align_items"
+KEY_FLEX_WRAP = "flex_wrap"
+KEY_GAP = "gap"
+KEY_FLEX_GROW = "flex_grow"
+KEY_FLEX_SHRINK = "flex_shrink"
+KEY_FLEX_BASIS = "flex_basis"
