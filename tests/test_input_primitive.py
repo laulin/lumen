@@ -71,6 +71,8 @@ class TestInputPrimitive(unittest.TestCase):
         # Loop 2: diff 5. Best=2.
         # Loop 3: diff 5. Best still 2? No, `diff < min_diff` is false if equal. So stays 2.
 
+        self.input_box.click_count = 0
+        self.input_box.last_click_time = -1000
         event = {"type": core.EVENT_CLICK, "local_x": 25}
         self.input_box.handle_event(event, self.context)
         # Expected: 2 ("He|llo") or 3 ("Hel|lo") depending on exact logic.
@@ -81,6 +83,8 @@ class TestInputPrimitive(unittest.TestCase):
         # diff 4: 5. diff 5: 5.
         # Correctly stays at 4?
         # Let's try 32px. Index 3 is 30. Index 4 is 40. Closer to 3.
+        self.input_box.click_count = 0
+        self.input_box.last_click_time = -1000
         event = {"type": core.EVENT_CLICK, "local_x": 32}
         self.input_box.handle_event(event, self.context)
         self.assertEqual(self.input_box.cursor_pos, 3)

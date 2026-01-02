@@ -129,7 +129,7 @@ class Input(BasePrimitive):
 
                  # Double/Triple Click Logic
                  now = sdl2.SDL_GetTicks()
-                 if now - self.last_click_time < 500:
+                 if self.click_count > 0 and now - self.last_click_time < 500:
                      self.click_count += 1
                  else:
                      self.click_count = 1
