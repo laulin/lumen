@@ -13,6 +13,7 @@ class Image(BasePrimitive):
                  y: Union[int, str],
                  width: Union[int, str],
                  height: Union[int, str],
+                 radius: int = 0,
                  scale_mode: str = "fit",
                  padding: Tuple[int, int, int, int] = (0, 0, 0, 0),
                  margin: Tuple[int, int, int, int] = (0, 0, 0, 0),
@@ -20,6 +21,7 @@ class Image(BasePrimitive):
                  listen_events: List[str] = None):
         super().__init__(x, y, width, height, padding, margin, id, listen_events)
         self.source = source
+        self.radius = radius
         self.scale_mode = scale_mode
 
     def to_data(self) -> Dict[str, Any]:
@@ -27,6 +29,8 @@ class Image(BasePrimitive):
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_IMAGE
         data[core.KEY_SOURCE] = self.source
+        if self.radius > 0:
+            data[core.KEY_RADIUS] = self.radius
         if self.scale_mode != "fit":
             data[core.KEY_SCALE_MODE] = self.scale_mode
         return data

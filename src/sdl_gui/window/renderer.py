@@ -10,6 +10,30 @@ from sdl2 import sdlgfx, sdlttf
 from sdl_gui import core, markdown
 
 
+class RawTexture(sdl2.ext.Texture):
+    """A Texture wrapper that can be initialized from an existing SDL_Texture."""
+    def __init__(self, renderer: Union[sdl2.ext.Renderer, Any], tx: Any):
+        # We bypass the standard __init__ since it requires a surface
+        self._renderer_ref = None
+        if isinstance(renderer, sdl2.ext.Renderer):
+            self._renderer_ref = renderer._renderer_ref
+        elif hasattr(renderer, "contents") and isinstance(renderer.contents, sdl2.SDL_Renderer):
+            self._renderer_ref = [renderer]
+        
+        if self._renderer_ref is None:
+            raise TypeError("renderer must be a valid Renderer or SDL_Renderer pointer")
+            
+        self._tx = tx
+        # Cache size
+        w, h = ctypes.c_int(), ctypes.c_int()
+        sdl2.SDL_QueryTexture(tx, None, None, ctypes.byref(w), ctypes.byref(h))
+        self._size = (w.value, h.value)
+
+    def __del__(self):
+        # Inherited destroy() will call SDL_DestroyTexture(self.tx)
+        if hasattr(self, "_tx"):
+             self.destroy()
+
 class Renderer:
     """Handles rendering of the display list using SDL2."""
 
@@ -171,6 +195,8 @@ class Renderer:
 
         radius = item.get(core.KEY_RADIUS, 0)
         x, y, w, h = rect
+        if radius > 0:
+            radius = min(radius, w // 2, h // 2)
 
         if radius > 0:
             self._flush_render_queue()
@@ -512,19 +538,22 @@ class Renderer:
         source = item.get(core.KEY_SOURCE)
         if not source: return
 
+        radius = item.get(core.KEY_RADIUS, 0)
         scale_mode = item.get(core.KEY_SCALE_MODE, "fit")
         item_id = item.get(core.KEY_ID)
-        cache_key = item_id if item_id else str(id(source))
-
-        texture = self._image_cache.get(cache_key)
+        
+        # 1. Get/Load original texture
+        orig_cache_key = item_id if item_id else (source if isinstance(source, str) else str(id(source)))
+        texture = self._image_cache.get(orig_cache_key)
         if not texture:
             surface = self._load_image_source(source)
             if surface:
                 texture = sdl2.ext.Texture(self.renderer, surface)
                 sdl2.SDL_FreeSurface(surface)
-                self._image_cache[cache_key] = texture
+                self._image_cache[orig_cache_key] = texture
         if not texture: return
 
+        # 2. Calculate dimensions
         img_w, img_h = texture.size
         dest_x, dest_y, dest_w, dest_h = rect
         final_x, final_y, final_w, final_h = dest_x, dest_y, dest_w, dest_h
@@ -539,7 +568,61 @@ class Renderer:
              final_x = dest_x + (dest_w - img_w) // 2
              final_y = dest_y + (dest_h - img_h) // 2
 
+        if final_w <= 0 or final_h <= 0: return
+
+        # 3. Handle Rounded Corners
+        if radius > 0:
+            radius = min(radius, final_w // 2, final_h // 2)
+            
+        if radius > 0:
+            rounded_key = f"rounded_{orig_cache_key}_{final_w}_{final_h}_{radius}"
+            rounded_texture = self._image_cache.get(rounded_key)
+            if not rounded_texture:
+                self._flush_render_queue()
+                rounded_texture = self._create_rounded_image_texture(texture, final_w, final_h, radius)
+                if rounded_texture:
+                    self._image_cache[rounded_key] = rounded_texture
+            
+            if rounded_texture:
+                self.renderer.copy(rounded_texture, dstrect=(final_x, final_y, final_w, final_h))
+                return
+
+        # 4. Standard render
         self.renderer.copy(texture, dstrect=(final_x, final_y, final_w, final_h))
+
+    def _create_rounded_image_texture(self, orig_texture: sdl2.ext.Texture, w: int, h: int, radius: int) -> Union[sdl2.ext.Texture, None]:
+        """Create a new texture with image content clipped by rounded corners."""
+        sdl_renderer = self.renderer.sdlrenderer
+        
+        # Create target texture
+        target = sdl2.SDL_CreateTexture(sdl_renderer, sdl2.SDL_PIXELFORMAT_RGBA8888, 
+                                        sdl2.SDL_TEXTUREACCESS_TARGET, w, h)
+        if not target: return None
+        
+        sdl2.SDL_SetTextureBlendMode(target, sdl2.SDL_BLENDMODE_BLEND)
+        
+        # Save current target and switch
+        old_target = sdl2.SDL_GetRenderTarget(sdl_renderer)
+        sdl2.SDL_SetRenderTarget(sdl_renderer, target)
+        
+        # Clear target (transparent)
+        sdl2.SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0)
+        sdl2.SDL_RenderClear(sdl_renderer)
+        
+        # Draw mask (white rounded box)
+        self._draw_aa_rounded_box((0, 0, w, h), radius, (255, 255, 255, 255))
+        
+        old_blend_mode = sdl2.SDL_BlendMode()
+        sdl2.SDL_GetTextureBlendMode(orig_texture.tx, ctypes.byref(old_blend_mode))
+        
+        sdl2.SDL_SetTextureBlendMode(orig_texture.tx, sdl2.SDL_BLENDMODE_MOD)
+        sdl2.SDL_RenderCopy(sdl_renderer, orig_texture.tx, None, sdl2.SDL_Rect(0, 0, w, h))
+        
+        # Restore state
+        sdl2.SDL_SetTextureBlendMode(orig_texture.tx, old_blend_mode)
+        sdl2.SDL_SetRenderTarget(sdl_renderer, old_target)
+        
+        return RawTexture(self.renderer, target)
 
     def _load_image_source(self, source: Union[str, bytes, Callable]) -> Any:
         try: import sdl2.sdlimage as img
