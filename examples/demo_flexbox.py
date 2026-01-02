@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 import sdl2.ext
 import logging
-logging.basicConfig(level=logging.DEBUG)
+#logging.basicConfig(level=logging.DEBUG)
 from sdl_gui import core
 from sdl_gui.window.window import Window
 from sdl_gui.layouts.flexbox import FlexBox
@@ -286,7 +286,7 @@ class BeautifulFlexDemo(Window):
              
              display_list = self.get_root_display_list()
              self.render(display_list)
-             time.sleep(0.016)
+             #time.sleep(0.016)
         
         sdl2.ext.quit()
 

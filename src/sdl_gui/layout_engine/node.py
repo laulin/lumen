@@ -73,25 +73,49 @@ class FlexNode:
             tm += basis + m_main; gs += child.style.grow; ss += child.style.shrink
         return cm, cc, tm, gs, ss
 
-    def _resolve_flex(self, child_main, main_cap, total_main, grow_sum, shrink_sum, main_is_auto):
+    def _resolve_flex(self, child_main: List[float], main_cap: float, total_main: float, grow_sum: float, shrink_sum: float, main_is_auto: bool):
         rem = main_cap - total_main
-        if main_is_auto or rem == 0: return child_main
-        for i, child in enumerate(self.children):
-            if rem > 0 and grow_sum > 0 and child.style.grow > 0: child_main[i] += rem * (child.style.grow / grow_sum)
-            elif rem < 0 and shrink_sum > 0 and child.style.shrink > 0: child_main[i] = max(0, child_main[i] - abs(rem) * (child.style.shrink / shrink_sum))
+        if main_is_auto or abs(rem) < 0.001: return child_main
+        
+        if rem > 0 and grow_sum > 0:
+            for i, child in enumerate(self.children):
+                if child.style.grow > 0:
+                    child_main[i] += rem * (child.style.grow / grow_sum)
+        elif rem < 0 and shrink_sum > 0:
+            # Iterative shrinking to handle items reaching 0
+            while abs(rem) > 0.001 and shrink_sum > 0:
+                total_shrunk = 0
+                next_shrink_sum = 0
+                for i, child in enumerate(self.children):
+                    if child.style.shrink > 0 and child_main[i] > 0:
+                        # Ratio based on current total shrink sum of active items
+                        potential_shrink = abs(rem) * (child.style.shrink / shrink_sum)
+                        actual_shrink = min(child_main[i], potential_shrink)
+                        child_main[i] -= actual_shrink
+                        total_shrunk += actual_shrink
+                        if child_main[i] > 0:
+                            next_shrink_sum += child.style.shrink
+                rem += total_shrunk
+                shrink_sum = next_shrink_sum
+                if total_shrunk < 0.001: break # Prevent infinite loops if progress stalls
         return child_main
 
-    def _resolve_cross(self, child_cross, cross_cap, cross_is_auto, is_row):
-        final, max_c = [], 0
+    def _resolve_cross(self, child_cross: List[float], cross_cap: float, cross_is_auto: bool, is_row: bool):
+        final, max_c = [], 0.0
         for i, child in enumerate(self.children):
             m = child.style.margin; m_cross = m[0] + m[2] if is_row else m[3] + m[1]
             c_cross = child_cross[i]
             req = child.style.height if is_row else child.style.width
-            if req is not None and req != "auto" and not (isinstance(req, (int, float)) and req == 0): c_cross = self._resolve_dimension(req, cross_cap)
+            
+            if req is not None and req != "auto" and not (isinstance(req, (int, float)) and req == 0): 
+                c_cross = self._resolve_dimension(req, cross_cap)
             elif self.style.align_items == AlignItems.STRETCH and not cross_is_auto: 
                 c_cross = cross_cap - m_cross
-                import logging
-                logging.debug(f"STRETCH TRIGGERED: c_cross={c_cross} cross_cap={cross_cap}")
+            
+            # Robustness: clamp to available cross capacity if parent has fixed size
+            if not cross_is_auto:
+                c_cross = max(0.0, min(c_cross, cross_cap - m_cross))
+                
             final.append(c_cross); max_c = max(max_c, c_cross + m_cross)
         return final, max_c
 
