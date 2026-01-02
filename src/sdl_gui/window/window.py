@@ -44,8 +44,6 @@ class Window:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         context.pop_parent()
-        if self.debug_server:
-            self.debug_server.stop()
 
     def add_child(self, child: Any) -> None:
         """Allow adding children directly to window (e.g. for implicit context)."""

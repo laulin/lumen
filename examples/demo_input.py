@@ -56,6 +56,9 @@ def main():
     
     window.root_children = [] # Reset for clarity of this block code reuse
     with window:
+         # Background
+         Rectangle(0, 0, width, height, color=(240, 240, 240))
+         
          ResponsiveText(20, 20, 760, 40, "Input Primitive Demo (SOTA & Versatile)", size=24, align="center")
          ResponsiveText(20, 50, 760, 20, "Try: Drag Select, Double Click, Ctrl+Z (Undo), Ctrl+Arrows, Styled Inputs", size=14, align="center", color=(80,80,80))
          

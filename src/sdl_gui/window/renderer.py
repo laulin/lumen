@@ -34,7 +34,9 @@ class Renderer:
         self._last_window_size = (0, 0)
         self._hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]] = []
 
-    def clear(self):
+    def clear(self, color=(0, 0, 0, 0)):
+        r, g, b, a = color
+        sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
         self.renderer.clear()
         self._hit_list = []
 
