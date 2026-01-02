@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 from sdl_gui.layout_engine.definitions import FlexDirection, JustifyContent, AlignItems, FlexWrap
 from sdl_gui.layout_engine.style import FlexStyle
 
@@ -6,165 +6,130 @@ class FlexNode:
     def __init__(self, style: FlexStyle = None):
         self.style = style or FlexStyle()
         self.children: List['FlexNode'] = []
-        # Absolute layout rect (x, y, w, h)
+        self.measure_func = None
         self.layout_rect: Tuple[int, int, int, int] = (0, 0, 0, 0)
     
     def add_child(self, child: 'FlexNode'):
         self.children.append(child)
 
-    def calculate_layout(self, available_width: int, available_height: int, x_offset: int = 0, y_offset: int = 0, force_size: bool = False):
-        # 1. Resolve own size
-        if force_size:
-            w = available_width
-            h = available_height
-        else:
-            w = self._resolve_dimension(self.style.width, available_width)
-            h = self._resolve_dimension(self.style.height, available_height)
-        
-        # If width/height not set, they might be determined by children or parent constraint
-        # For simplify, assume root node has explicit size or fills availability
-        if w is None: w = available_width
-        if h is None: h = available_height
-
-        self.layout_rect = (x_offset, y_offset, w, h)
-        
+    def measure(self, available_width: int, available_height: int) -> Tuple[int, int]:
+        w = self._resolve_dimension(self.style.width, available_width)
+        h = self._resolve_dimension(self.style.height, available_height)
+        if w is not None and h is not None: return int(w), int(h)
         if not self.children:
-            return
+             if self.measure_func: return self._measure_leaf(w, h, available_width, available_height)
+             return int(w or 0), int(h or 0)
+        old_rect = self.layout_rect
+        self.calculate_layout(available_width, available_height, 0, 0, force_size=False)
+        _, _, final_w, final_h = self.layout_rect
+        self.layout_rect = old_rect
+        return int(final_w), int(final_h)
 
-        # 2. Main Axis & Cross Axis Setup
+    def _measure_leaf(self, w, h, available_width, available_height):
+        mw, mh = self.measure_func(available_width, available_height)
+        p = self.style.padding
+        return int((w if w is not None else mw) + p[3] + p[1]), int((h if h is not None else mh) + p[0] + p[2])
+
+    def calculate_layout(self, available_width: int, available_height: int, x_offset: int = 0, y_offset: int = 0, force_size: bool = False):
+        if force_size: w, h = available_width, available_height
+        else: w, h = self._resolve_dimension(self.style.width, available_width), self._resolve_dimension(self.style.height, available_height)
         is_row = self.style.direction in (FlexDirection.ROW, FlexDirection.ROW_REVERSE)
-        main_size = w if is_row else h
-        cross_size = h if is_row else w
-        
-        # 3. First Pass: Measure fixed children and determine free space
-        total_main_used = 0
-        total_flex_grow = 0
-        total_flex_shrink = 0
-        
-        for child in self.children:
-            # Recursive pre-calc if needed? 
-            # Ideally we need to know child's basis.
-            basis = self._get_flex_basis(child, main_size)
-            total_main_used += basis
-            total_flex_grow += child.style.grow
-            total_flex_shrink += child.style.shrink
-        
-        # 4. Resolve flexible lengths
-        remaining_space = main_size - total_main_used
-        
-        # 5. Distribute space
-        child_main_sizes = []
-        for i, child in enumerate(self.children):
-            basis = self._get_flex_basis(child, main_size)
-            if remaining_space > 0 and total_flex_grow > 0:
-                # Grow
-                if child.style.grow > 0:
-                    extra = remaining_space * (child.style.grow / total_flex_grow)
-                    child_main_sizes.append(basis + extra)
-                else:
-                    child_main_sizes.append(basis)
-            elif remaining_space < 0 and total_flex_shrink > 0:
-                # Shrink
-                # Standard formula is more complex, simplified here:
-                shrinkage = abs(remaining_space) * (child.style.shrink / total_flex_shrink)
-                child_main_sizes.append(max(0, basis - shrinkage))
-            else:
-                child_main_sizes.append(basis)
+        main_auto, cross_auto = (is_row and w is None) or (not is_row and h is None), (is_row and h is None) or (not is_row and w is None)
+        calc_w, calc_h = w if w is not None else available_width, h if h is not None else available_height
+        if not self.children:
+             bw, bh = self.measure(available_width, available_height); self.layout_rect = (x_offset, y_offset, bw, bh); return
+        p = self.style.padding
+        inner_w, inner_h = max(0, calc_w - p[3] - p[1]), max(0, calc_h - p[0] - p[2])
+        main_cap, cross_cap = (inner_w if is_row else inner_h), (inner_h if is_row else inner_w)
+        child_main, child_cross, total_main, grow_sum, shrink_sum = self._prepare_children(main_cap, cross_cap, is_row)
+        child_main = self._resolve_flex(child_main, main_cap, total_main, grow_sum, shrink_sum, main_auto)
+        final_child_cross, max_cross = self._resolve_cross(child_cross, cross_cap, cross_auto, is_row)
+        if main_auto: main_cap = self._calc_auto_main(child_main, is_row)
+        if cross_auto: cross_cap = max_cross
+        self.layout_rect = (x_offset, y_offset, (main_cap if is_row else cross_cap) + p[3] + p[1], (cross_cap if is_row else main_cap) + p[0] + p[2])
+        self._set_positions(x_offset + p[3], y_offset + p[0], main_cap, cross_cap, child_main, final_child_cross, is_row)
 
-        # 6. Cross Axis Sizing (Stretch or fixed)
-        child_cross_sizes = []
+    def _prepare_children(self, main_cap, cross_cap, is_row):
+        cm, cc, tm, gs, ss = [], [], 0, 0, 0
+        tm += self.style.gap * (len(self.children) - 1) if len(self.children) > 1 else 0
         for child in self.children:
-            cross_dim_req = child.style.height if is_row else child.style.width
-            if cross_dim_req is not None and cross_dim_req != "auto":
-                 resolved = self._resolve_dimension(cross_dim_req, cross_size)
-                 child_cross_sizes.append(resolved)
-            elif self.style.align_items == AlignItems.STRETCH:
-                 child_cross_sizes.append(cross_size)
-            else:
-                 # Auto / content size - for now default to 0 or some content measurement?
-                 # In this simplified engine, if no content and no size, it's 0.
-                 child_cross_sizes.append(0)
+            basis = self._get_flex_basis(child, main_cap, cross_cap)
+            m = child.style.margin; m_main = m[3] + m[1] if is_row else m[0] + m[2]
+            cw, ch = child.measure(main_cap, cross_cap)
+            cm.append(basis); cc.append(ch if is_row else cw)
+            tm += basis + m_main; gs += child.style.grow; ss += child.style.shrink
+        return cm, cc, tm, gs, ss
 
-        # 7. Main Axis Positioning (Justify Content)
-        # Recalculate used space after flexibility
-        final_total_main = sum(child_main_sizes)
-        free_space = main_size - final_total_main
-        
-        start_pos = 0
-        gap = 0
-        
-        if self.style.justify_content == JustifyContent.CENTER:
-            start_pos = free_space / 2
-        elif self.style.justify_content == JustifyContent.FLEX_END:
-            start_pos = free_space
-        elif self.style.justify_content == JustifyContent.SPACE_BETWEEN:
-            if len(self.children) > 1:
-                gap = free_space / (len(self.children) - 1)
-        elif self.style.justify_content == JustifyContent.SPACE_AROUND:
-             if len(self.children) > 0:
-                half_gap = free_space / (len(self.children) * 2)
-                start_pos = half_gap
-                gap = half_gap * 2
-        elif self.style.justify_content == JustifyContent.SPACE_EVENLY:
-             if len(self.children) > 0:
-                 gap = free_space / (len(self.children) + 1)
-                 start_pos = gap
-        
-        current_main = start_pos
-        
-        # 8. Final Layout Pass for Children
+    def _resolve_flex(self, child_main, main_cap, total_main, grow_sum, shrink_sum, main_is_auto):
+        rem = main_cap - total_main
+        if main_is_auto or rem == 0: return child_main
         for i, child in enumerate(self.children):
-            c_main = child_main_sizes[i]
-            c_cross = child_cross_sizes[i]
-            
-            # Cross Axis Positioning (Align Items)
-            cross_pos = 0
-            if self.style.align_items == AlignItems.CENTER:
-                cross_pos = (cross_size - c_cross) / 2
-            elif self.style.align_items == AlignItems.FLEX_END:
-                cross_pos = cross_size - c_cross
-            
-            cx, cy, cw, ch = 0, 0, 0, 0
-            
-            if is_row:
-                cx = x_offset + current_main
-                cy = y_offset + cross_pos
-                cw = c_main
-                ch = c_cross
-                current_main += c_main + gap
-            else:
-                cx = x_offset + cross_pos
-                cy = y_offset + current_main
-                cw = c_cross
-                ch = c_main
-                current_main += c_main + gap
-                
-            # Recursively layout child
+            if rem > 0 and grow_sum > 0 and child.style.grow > 0: child_main[i] += rem * (child.style.grow / grow_sum)
+            elif rem < 0 and shrink_sum > 0 and child.style.shrink > 0: child_main[i] = max(0, child_main[i] - abs(rem) * (child.style.shrink / shrink_sum))
+        return child_main
+
+    def _resolve_cross(self, child_cross, cross_cap, cross_is_auto, is_row):
+        final, max_c = [], 0
+        for i, child in enumerate(self.children):
+            m = child.style.margin; m_cross = m[0] + m[2] if is_row else m[3] + m[1]
+            c_cross = child_cross[i]
+            req = child.style.height if is_row else child.style.width
+            if req is not None and req != "auto" and not (isinstance(req, (int, float)) and req == 0): c_cross = self._resolve_dimension(req, cross_cap)
+            elif self.style.align_items == AlignItems.STRETCH and not cross_is_auto: c_cross = cross_cap - m_cross
+            final.append(c_cross); max_c = max(max_c, c_cross + m_cross)
+        return final, max_c
+
+    def _calc_auto_main(self, child_main, is_row):
+        main = sum(child_main) + (self.style.gap * (len(self.children) - 1) if len(self.children) > 1 else 0)
+        for child in self.children:
+             m = child.style.margin; main += (m[3] + m[1] if is_row else m[0] + m[2])
+        return main
+
+    def _set_positions(self, ctx_x, ctx_y, main_cap, cross_cap, child_main, final_cross, is_row):
+        tm_with_m = sum(child_main) + (self.style.gap * (len(self.children) - 1) if len(self.children) > 1 else 0)
+        for c in self.children: m = c.style.margin; tm_with_m += (m[3] + m[1] if is_row else m[0] + m[2])
+        free = main_cap - tm_with_m
+        start, gap = self._get_justify_params(free)
+        curr_m = start
+        for i, child in enumerate(self.children):
+            m = child.style.margin; c_m, c_c = child_main[i], final_cross[i]
+            ms, me = (m[3], m[1]) if is_row else (m[0], m[2])
+            cs = self._get_align_pos(child, cross_cap, c_c, is_row)
+            if is_row: cx, cy, cw, ch = ctx_x + curr_m + ms, ctx_y + cs, c_m, c_c
+            else: cx, cy, cw, ch = ctx_x + cs, ctx_y + curr_m + ms, c_c, c_m
             child.calculate_layout(cw, ch, cx, cy, force_size=True)
+            curr_m += (c_m + ms + me) + gap
 
+    def _get_justify_params(self, free):
+        start, gap = 0, self.style.gap
+        jc = self.style.justify_content
+        if jc == JustifyContent.CENTER: start = free / 2
+        elif jc == JustifyContent.FLEX_END: start = free
+        elif jc == JustifyContent.SPACE_BETWEEN and len(self.children) > 1: gap = free / (len(self.children) - 1) + gap
+        elif jc == JustifyContent.SPACE_AROUND and len(self.children) > 0: unit = free / (len(self.children) * 2); start, gap = unit, unit * 2 + gap
+        elif jc == JustifyContent.SPACE_EVENLY and len(self.children) > 0: gap = free / (len(self.children) + 1) + gap; start = free / (len(self.children) + 1)
+        return start, gap
+
+    def _get_align_pos(self, child, cross_cap, c_c, is_row):
+        m = child.style.margin; ms, me = (m[0], m[2]) if is_row else (m[3], m[1])
+        if self.style.align_items == AlignItems.CENTER: return (cross_cap - (c_c + ms + me)) / 2 + ms
+        if self.style.align_items == AlignItems.FLEX_END: return cross_cap - c_c - me
+        return ms
 
     def _resolve_dimension(self, val, available):
-        if val is None: return None
-        if val == "auto": return None
-        if isinstance(val, int): return val
+        if val is None or val == "auto": return None
+        if isinstance(val, (int, float)): return val
         if isinstance(val, str) and val.endswith("%"):
-            try:
-                return float(val[:-1]) / 100.0 * available
-            except:
-                return 0
+            try: return float(val[:-1]) / 100.0 * available
+            except: return 0
         return 0
 
-    def _get_flex_basis(self, child, main_size):
-        # Resolve basis
+    def _get_flex_basis(self, child, main_cap, cross_cap):
         basis = child.style.basis
         if basis == "auto":
-            # If auto, look at width/height
-            if self.style.direction in (FlexDirection.ROW, FlexDirection.ROW_REVERSE):
-                req = child.style.width
-            else:
-                req = child.style.height
-            
-            if req is None: return 0 # Content size not supported yet
-            return self._resolve_dimension(req, main_size) or 0
-        
-        return self._resolve_dimension(basis, main_size)
+            is_row = self.style.direction in (FlexDirection.ROW, FlexDirection.ROW_REVERSE)
+            req = child.style.width if is_row else child.style.height
+            if req is not None and req != "auto": return self._resolve_dimension(req, main_cap) or 0
+            cw, ch = child.measure(main_cap, cross_cap)
+            return cw if is_row else ch
+        return self._resolve_dimension(basis, main_cap) or 0

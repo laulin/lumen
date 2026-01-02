@@ -219,11 +219,12 @@ class Renderer:
         style.wrap = FlexWrap(item.get(core.KEY_FLEX_WRAP, "nowrap"))
         style.gap = item.get(core.KEY_GAP, 0)
         
-        # Map Item Properties
+        # Box Model
         style.grow = item.get(core.KEY_FLEX_GROW, 0.0)
         style.shrink = item.get(core.KEY_FLEX_SHRINK, 1.0)
-        basis = item.get(core.KEY_FLEX_BASIS, "auto")
-        style.basis = basis
+        style.basis = item.get(core.KEY_FLEX_BASIS, "auto")
+        style.padding = self._normalize_box_model(item.get(core.KEY_PADDING, (0, 0, 0, 0)))
+        style.margin = self._normalize_box_model(item.get(core.KEY_MARGIN, (0, 0, 0, 0)))
         
         # Determine Explicit Size if any
         # This is tricky because item might rely on parent logic.
@@ -244,13 +245,17 @@ class Renderer:
         # Important: Link the original item to the node for rendering later
         node.original_item = item 
         
-        for child in item.get(core.KEY_CHILDREN, []):
-            # For children, we might not know parent_w/h yet perfectly if we are deep in tree.
-            # But we pass 0 or handling it in _resolve?
-            # Actually, _build_flex_tree DOES NOT resolve sizes. It only sets up Style.
-            # Resolution happens in calculate_layout.
-            child_node = self._build_flex_tree(child, 0, 0)
-            node.add_child(child_node)
+        if item.get(core.KEY_TYPE) != core.TYPE_FLEXBOX:
+            # Leaf node: provide a measure function
+            # Use default arg to capture the CURRENT item in the closure!
+            node.measure_func = lambda av_w, av_h, it=item: (
+                self._measure_item_width(it, av_w, av_h),
+                self._measure_item(it, av_w, av_h)
+            )
+        else:
+            for child in item.get(core.KEY_CHILDREN, []):
+                child_node = self._build_flex_tree(child, 0, 0)
+                node.add_child(child_node)
             
         return node
 
@@ -774,6 +779,14 @@ class Renderer:
             elif isinstance(res, (bytes, bytearray)): return self._load_image_source(res)
         return surface
 
+    def _normalize_box_model(self, val) -> Tuple[int, int, int, int]:
+        if isinstance(val, (int, float)): return (int(val), int(val), int(val), int(val))
+        if isinstance(val, (list, tuple)):
+            if len(val) == 1: return (int(val[0]), int(val[0]), int(val[0]), int(val[0]))
+            if len(val) == 2: return (int(val[0]), int(val[1]), int(val[0]), int(val[1]))
+            if len(val) == 4: return (int(val[0]), int(val[1]), int(val[2]), int(val[3]))
+        return (0, 0, 0, 0)
+
     def _resolve_val(self, val: Union[int, str], parent_len: int) -> int:
         if isinstance(val, int): return val
         elif isinstance(val, str):
@@ -789,8 +802,9 @@ class Renderer:
         return 0
 
     def _measure_item(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
+        """Returns the HEIGHT of the item."""
         item_id = item.get(core.KEY_ID)
-        cache_key = (item_id, available_width) if item_id else None
+        cache_key = (item_id, available_width, "h") if item_id else None
         if cache_key and cache_key in self._measurement_cache: return self._measurement_cache[cache_key]
 
         if core.KEY_RECT in item:
@@ -802,11 +816,44 @@ class Renderer:
         typ = item.get(core.KEY_TYPE)
         if typ == core.TYPE_TEXT: h = self._measure_text_height(item, available_width, available_height)
         elif typ == core.TYPE_VBOX: h = self._measure_vbox_height(item, available_width, available_height)
-        elif typ == core.TYPE_HBOX: h = self._measure_hbox_height(item, available_width, available_height)
         elif typ == core.TYPE_IMAGE: h = self._measure_image_height(item, available_width)
+        elif core.KEY_RECT in item:
+             rh = item[core.KEY_RECT][3]
+             if rh != "auto":
+                  h = self._resolve_val(rh, available_height)
+        elif typ == core.TYPE_FLEXBOX: h = self._measure_flexbox_height(item, available_width, available_height)
 
         if cache_key: self._measurement_cache[cache_key] = h
         return h
+
+    def _measure_item_width(self, item: Dict[str, Any], available_width: int, available_height: int = 0) -> int:
+        """Returns the WIDTH of the item."""
+        item_id = item.get(core.KEY_ID)
+        cache_key = (item_id, available_width, "w") if item_id else None
+        if cache_key and cache_key in self._measurement_cache: return self._measurement_cache[cache_key]
+
+        if core.KEY_RECT in item:
+            raw_width = item[core.KEY_RECT][2]
+            if raw_width != "auto":
+                 return self._resolve_val(raw_width, available_width)
+
+        w = 0
+        typ = item.get(core.KEY_TYPE)
+        if typ == core.TYPE_TEXT: w = self._measure_text_width(item, available_height)
+        elif typ == core.TYPE_FLEXBOX: w = self._measure_flexbox_width(item, available_width, available_height)
+        elif core.KEY_RECT in item:
+             # If primitive has a fixed rect, use its width
+             rw = item[core.KEY_RECT][2]
+             if rw != "auto":
+                  w = self._resolve_val(rw, available_width)
+        elif typ == core.TYPE_IMAGE:
+             src = item.get(core.KEY_SOURCE)
+             if src:
+                 s = self._load_image_source(src)
+                 w = s.w if s else 0
+        
+        if cache_key: self._measurement_cache[cache_key] = w
+        return w
 
     def _measure_vbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
         pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))
@@ -821,6 +868,42 @@ class Renderer:
             cw = self._resolve_val(cw_raw, iw)
             h_sum += mt + self._measure_item(child, cw, ih) + mb
         return h_sum
+
+    def _measure_flexbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
+        # To measure, we effectively run the layout with 'auto' height on root?
+        # Or we rely on the engine to tell us the content height.
+        # But our engines `calculate_layout` calculates positions given a size.
+        # It doesn't inherently "shrink wrap" unless specified.
+        
+        # However, if we pass av_h=0 or 'auto', the engine might struggle if not designed for it.
+        # BUT, FlexNode logic:
+        # If height is None/Auto, it tries to grow/shrink or fit content.
+        # We need a mode in FlexNode to "measure content".
+        
+        # Strategy:
+        # 1. Build tree.
+        # 2. Force root height to be 'auto' or 0 (if av_h is constrained).
+        # 3. Calculate layout.
+        # 4. Check the resulting height of the root node.
+        
+        # Note: We must NOT pass force_size=True here, because we want natural size.
+        
+        node = self._build_flex_tree(item, av_w, av_h)
+        # Hack: ensure style.height is None so it calculates naturally if it was "auto"
+        # _build_flex_tree maps "auto" to None (via `if raw_rect[3] != "auto": style.height = ...`). 
+        # So it should be fine.
+        
+        # We run layout with available width. 
+        # If av_h is 0, we treat it as infinite for measurement? Or 0?
+        # Usually measurement means "how much space do you NEED".
+        # So we give it available width, and infinite height?
+        available_h_for_calc = av_h if av_h > 0 else 99999
+        
+        try:
+             node.calculate_layout(av_w, available_h_for_calc, force_size=False)
+             return int(node.layout_rect[3])
+        except Exception:
+             return 0
 
     def _measure_hbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
         pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))
@@ -837,16 +920,14 @@ class Renderer:
             max_h = max(max_h, mt + self._measure_item(child, cw, ih) + mb)
         return pt + max_h + pb
 
-    def _measure_item_width(self, item: Dict[str, Any], parent_height: int = 0) -> int:
-        typ = item.get(core.KEY_TYPE)
-        if typ == core.TYPE_TEXT: return self._measure_text_width(item, parent_height)
-        elif typ == core.TYPE_HBOX: return self._measure_hbox_width(item, parent_height)
-        elif typ == core.TYPE_IMAGE:
-             src = item.get(core.KEY_SOURCE)
-             if src:
-                 s = self._load_image_source(src)
-                 return s.w if s else 0
-        return 0
+    def _measure_flexbox_width(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
+        node = self._build_flex_tree(item, av_w, av_h)
+        available_h_for_calc = av_h if av_h > 0 else 99999
+        try:
+             node.calculate_layout(av_w, available_h_for_calc, force_size=False)
+             return int(node.layout_rect[2])
+        except Exception:
+             return 0
 
     def _measure_hbox_width(self, item: Dict[str, Any], parent_height: int) -> int:
         pad = item.get(core.KEY_PADDING, (0, 0, 0, 0))

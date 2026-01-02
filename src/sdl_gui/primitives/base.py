@@ -84,7 +84,15 @@ class BasePrimitive(ABC):
         'color',
         'background_color', # Maps to color
         'margin',
-        'padding'
+        'padding',
+        'flex_grow',
+        'flex_shrink',
+        'flex_basis',
+        'flex_direction',
+        'justify_content',
+        'align_items',
+        'flex_wrap',
+        'gap'
     }
 
     def __getattr__(self, name: str):
