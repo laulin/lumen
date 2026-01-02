@@ -10,6 +10,7 @@ from sdl_gui.window.window import Window
 from sdl_gui.layers.scrollable_layer import ScrollableLayer
 from sdl_gui.layouts.vbox import VBox
 from sdl_gui.layouts.hbox import HBox
+from sdl_gui.layouts.flexbox import FlexBox
 from sdl_gui.primitives.responsive_text import ResponsiveText
 from sdl_gui.primitives.rectangle import Rectangle
 from sdl_gui import core
@@ -99,45 +100,43 @@ def main():
     with Window("Lumen Reddit Clone", 500, 800, debug=True) as win:
         
         # --- HEADER ---
-        with HBox(0, 0, "100%", 50, padding=(0, 15, 0, 15)) as header:
+        with FlexBox(0, 0, "100%", 50, padding=(0, 15, 0, 15), justify_content="space_between", align_items="center") as header:
             header.set_background_color(26, 26, 27, 255)
             
             # 1. Logo Section
-            with HBox(0, 0, "auto", "100%") as logo_box:
+            with FlexBox(0, 0, "auto", "100%", align_items="center") as logo_box:
                 # Icon Circle
-                with HBox(0, 0, 32, 32, margin=(9, 5, 9, 0)) as icon_box:
+                with HBox(0, 0, 32, 32, margin=(0, 5, 0, 0)) as icon_box:
                     Rectangle(0, 0, 32, 32, color=(255, 69, 0, 255), radius=16)
                 
-                ResponsiveText(0, 0, "auto", "auto", text="**reddit**", size=20, color=(255, 255, 255, 255), markup=True, margin=(13, 0, 0, 0))
+                ResponsiveText(0, 0, "auto", "auto", text="**reddit**", size=20, color=(255, 255, 255, 255), markup=True)
 
             # 2. Search Bar
-            # Flexible spacer
-            # Reduced width to fit
-            with HBox(0, 0, 120, 36, margin=(7, 10, 7, 10)) as search_box:
+            with FlexBox(0, 0, "auto", 36, margin=(0, 20, 0, 20), align_items="center") as search_box:
+                search_box.set_flex_grow(1)
                 search_box.set_background_color(39, 40, 41, 255)
                 search_box.set_radius(18)
                 
                 # Search Icon & Placeholder
-                ResponsiveText(0, 0, "auto", "auto", text="🔍", size=14, color=(129, 131, 132, 255), margin=(8, 0, 0, 10))
-                ResponsiveText(0, 0, "auto", "auto", text="Search", size=14, color=(129, 131, 132, 255), margin=(9, 0, 0, 5))
+                ResponsiveText(0, 0, "auto", "auto", text="🔍", size=14, color=(129, 131, 132, 255), margin=(0, 0, 0, 10))
+                ResponsiveText(0, 0, "auto", "auto", text="Search", size=14, color=(129, 131, 132, 255), margin=(0, 0, 0, 5))
 
             # 3. Actions (Right side)
-            # Login / Signup
-            with HBox(0, 0, "auto", "100%") as actions_box:
+            with FlexBox(0, 0, "auto", "100%", align_items="center") as actions_box:
                 
                 # Log In Button
-                with HBox(0, 0, 70, 32, margin=(9, 5, 9, 0)) as login_btn:
+                with FlexBox(0, 0, 70, 32, margin=(0, 5, 0, 0), justify_content="center", align_items="center") as login_btn:
                     login_btn.set_border_width(1)
                     login_btn.set_border_color(215, 218, 220, 255)
                     login_btn.set_radius(16)
-                    ResponsiveText(0, 0, 70, "auto", text="Log In", size=12, color=(215, 218, 220, 255), align="center", margin=(9, 0, 0, 0))
+                    ResponsiveText(0, 0, "auto", "auto", text="Log In", size=12, color=(215, 218, 220, 255), align="center")
 
                 # Sign Up Button
-                with HBox(0, 0, 70, 32, margin=(9, 0, 9, 5)) as signup_btn:
+                with FlexBox(0, 0, 70, 32, margin=(0, 0, 0, 5), justify_content="center", align_items="center") as signup_btn:
                     signup_btn.set_background_color(215, 218, 220, 255)
                     signup_btn.set_radius(16)
                     # Text inside needs to be black
-                    ResponsiveText(0, 0, 70, "auto", text="Sign Up", size=12, color=(26, 26, 27, 255), align="center", margin=(9, 0, 0, 0))
+                    ResponsiveText(0, 0, "auto", "auto", text="Sign Up", size=12, color=(26, 26, 27, 255), align="center")
 
         # --- CONTENT LAYER ---
         with ScrollableLayer(0, 50, "100%", 750, id="feed", listen_events=[core.EVENT_SCROLL]) as scroll_layer:
