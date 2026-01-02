@@ -8,9 +8,11 @@ class FlexNode:
         self.children: List['FlexNode'] = []
         self.measure_func = None
         self.layout_rect: Tuple[int, int, int, int] = (0, 0, 0, 0)
+        self.parent: 'FlexNode' = None
     
     def add_child(self, child: 'FlexNode'):
         self.children.append(child)
+        child.parent = self
 
     def measure(self, available_width: int, available_height: int) -> Tuple[int, int]:
         w = self._resolve_dimension(self.style.width, available_width)
@@ -37,7 +39,17 @@ class FlexNode:
         main_auto, cross_auto = (is_row and w is None) or (not is_row and h is None), (is_row and h is None) or (not is_row and w is None)
         calc_w, calc_h = w if w is not None else available_width, h if h is not None else available_height
         if not self.children:
-             bw, bh = self.measure(available_width, available_height); self.layout_rect = (x_offset, y_offset, bw, bh); return
+             final_w = w if force_size else None
+             final_h = h if force_size else None
+             if final_w is not None and final_h is not None:
+                 self.layout_rect = (int(x_offset), int(y_offset), int(final_w), int(final_h))
+                 import logging
+                 parent_str = f"P:{self.parent.style.direction.value}" if self.parent else "ROOT"
+                 logging.debug(f"Leaf layout: rect={self.layout_rect} {parent_str} force={force_size}")
+             else:
+                 bw, bh = self.measure(available_width, available_height)
+                 self.layout_rect = (int(x_offset), int(y_offset), int(bw), int(bh))
+             return
         p = self.style.padding
         inner_w, inner_h = max(0, calc_w - p[3] - p[1]), max(0, calc_h - p[0] - p[2])
         main_cap, cross_cap = (inner_w if is_row else inner_h), (inner_h if is_row else inner_w)
@@ -46,7 +58,7 @@ class FlexNode:
         final_child_cross, max_cross = self._resolve_cross(child_cross, cross_cap, cross_auto, is_row)
         if main_auto: main_cap = self._calc_auto_main(child_main, is_row)
         if cross_auto: cross_cap = max_cross
-        self.layout_rect = (x_offset, y_offset, (main_cap if is_row else cross_cap) + p[3] + p[1], (cross_cap if is_row else main_cap) + p[0] + p[2])
+        self.layout_rect = (int(x_offset), int(y_offset), int((main_cap if is_row else cross_cap) + p[3] + p[1]), int((cross_cap if is_row else main_cap) + p[0] + p[2]))
         self._set_positions(x_offset + p[3], y_offset + p[0], main_cap, cross_cap, child_main, final_child_cross, is_row)
 
     def _prepare_children(self, main_cap, cross_cap, is_row):
@@ -55,7 +67,8 @@ class FlexNode:
         for child in self.children:
             basis = self._get_flex_basis(child, main_cap, cross_cap)
             m = child.style.margin; m_main = m[3] + m[1] if is_row else m[0] + m[2]
-            cw, ch = child.measure(main_cap, cross_cap)
+            av_w, av_h = (main_cap, cross_cap) if is_row else (cross_cap, main_cap)
+            cw, ch = child.measure(av_w, av_h)
             cm.append(basis); cc.append(ch if is_row else cw)
             tm += basis + m_main; gs += child.style.grow; ss += child.style.shrink
         return cm, cc, tm, gs, ss
@@ -75,7 +88,10 @@ class FlexNode:
             c_cross = child_cross[i]
             req = child.style.height if is_row else child.style.width
             if req is not None and req != "auto" and not (isinstance(req, (int, float)) and req == 0): c_cross = self._resolve_dimension(req, cross_cap)
-            elif self.style.align_items == AlignItems.STRETCH and not cross_is_auto: c_cross = cross_cap - m_cross
+            elif self.style.align_items == AlignItems.STRETCH and not cross_is_auto: 
+                c_cross = cross_cap - m_cross
+                import logging
+                logging.debug(f"STRETCH TRIGGERED: c_cross={c_cross} cross_cap={cross_cap}")
             final.append(c_cross); max_c = max(max_c, c_cross + m_cross)
         return final, max_c
 
@@ -130,6 +146,7 @@ class FlexNode:
             is_row = self.style.direction in (FlexDirection.ROW, FlexDirection.ROW_REVERSE)
             req = child.style.width if is_row else child.style.height
             if req is not None and req != "auto": return self._resolve_dimension(req, main_cap) or 0
-            cw, ch = child.measure(main_cap, cross_cap)
+            av_w, av_h = (main_cap, cross_cap) if is_row else (cross_cap, main_cap)
+            cw, ch = child.measure(av_w, av_h)
             return cw if is_row else ch
         return self._resolve_dimension(basis, main_cap) or 0

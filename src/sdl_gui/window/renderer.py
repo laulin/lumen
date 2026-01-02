@@ -197,9 +197,8 @@ class Renderer:
         root_node = self._build_flex_tree(item, w, h)
         
         # 2. Calculate Layout
-        # We pass w, h as available space. 
-        # Since we are rendering at 'rect', the root layout should start at x, y?
-        # No, FlexNode calculates relative to (0,0) usually, but we can pass offset.
+        import logging
+        logging.debug(f"RENDER FLEXBOX: entry={x, y, w, h}")
         root_node.calculate_layout(w, h, x_offset=x, y_offset=y, force_size=True)
         
         # 3. Render Background (if color/border exists)
@@ -214,8 +213,8 @@ class Renderer:
         
         # Map Flex Properties
         style.direction = FlexDirection(item.get(core.KEY_FLEX_DIRECTION, "row"))
-        style.justify_content = JustifyContent(item.get(core.KEY_JUSTIFY_CONTENT, "flex_start"))
-        style.align_items = AlignItems(item.get(core.KEY_ALIGN_ITEMS, "stretch"))
+        style.justify_content = JustifyContent(item.get(core.KEY_JUSTIFY_CONTENT, JustifyContent.FLEX_START.value))
+        style.align_items = AlignItems(item.get(core.KEY_ALIGN_ITEMS, AlignItems.STRETCH.value))
         style.wrap = FlexWrap(item.get(core.KEY_FLEX_WRAP, "nowrap"))
         style.gap = item.get(core.KEY_GAP, 0)
         

@@ -7,6 +7,8 @@ from typing import List, Tuple
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import sdl2.ext
+import logging
+logging.basicConfig(level=logging.DEBUG)
 from sdl_gui import core
 from sdl_gui.window.window import Window
 from sdl_gui.layouts.flexbox import FlexBox
@@ -48,14 +50,16 @@ class BeautifulFlexDemo(Window):
         card_section = self._create_complex_card_section()
         root.add_child(card_section)
         
-        # 4. Alignment Playground
-        playground = self._create_alignment_playground()
-        root.add_child(playground)
+        # 4. Justify Content Playground
+        justify_playground = self._create_justify_playground()
+        root.add_child(justify_playground)
+        
+        # 5. Align Items Playground
+        align_playground = self._create_align_playground()
+        root.add_child(align_playground)
 
         # Apply Global Background
         bg = Rectangle(x=0, y=0, width="100%", height="100%", color=COLOR_BG)
-        # We return [bg, root] to layer basic background then content
-        # Note: renderer draws in order.
         return [bg, root]
 
     def _create_header(self):
@@ -202,52 +206,67 @@ class BeautifulFlexDemo(Window):
         btn.add_child(t)
         return btn
 
-    def _create_alignment_playground(self):
-        # Section Header
+    def _create_justify_playground(self):
         sec = FlexBox(x=0, y=0, width="100%", height="auto", flex_direction="column", gap=10)
-        
         label = ResponsiveText(x=0, y=0, width="100%", height="auto",
-                              text="Alignment Playground (Justify Content)",
+                              text="Justify Content (Horizontal Distribution)",
                               size=18, color=COLOR_TEXT_MAIN)
         sec.add_child(label)
         
-        # Row of small visualizers
-        row = FlexBox(x=0, y=0, width="100%", height=120, flex_direction="row", gap=20)
-        
+        row = FlexBox(x=0, y=0, width="100%", height=100, flex_direction="row", gap=10)
         configs = [
-            ("flex_start", "Start"),
-            ("center", "Center"),
-            ("space_between", "Space Between"),
-            ("space_evenly", "Space Evenly")
+            ("flex_start", "Start"), ("center", "Center"), ("flex_end", "End"),
+            ("space_between", "Between"), ("space_around", "Around"), ("space_evenly", "Evenly")
         ]
         
         for mode, name in configs:
-            viz = FlexBox(x=0, y=0, width="auto", height="100%",
-                         flex_direction="row",
-                         justify_content=mode,
-                         align_items="center",
-                         padding=(5,5,5,5))
-            viz.set_flex_grow(1)
-            viz.set_color((40, 40, 45, 255))
-            viz.set_radius(8)
-            
-            # Add 3 dots
+            viz = FlexBox(x=0, y=0, width="auto", height="100%", flex_direction="row",
+                         justify_content=mode, align_items="center", padding=5)
+            viz.set_flex_grow(1).set_color((40, 40, 45, 255)).set_radius(8)
             for _ in range(3):
-                dot = Rectangle(x=0, y=0, width=15, height=15, color=COLOR_WARNING)
-                dot.set_radius(7)
-                viz.add_child(dot)
+                dot = Rectangle(x=0, y=0, width=12, height=12, color=COLOR_WARNING)
+                dot.set_radius(6); viz.add_child(dot)
                 
-            # Label overlay? Or just text below.
-            # Using absolute positioning hacks or just a container.
-            # Let's wrap viz in a col to add label.
             wrapper = FlexBox(x=0, y=0, width="auto", height="100%", flex_direction="column", gap=5)
             wrapper.set_flex_grow(1)
+            lbl = ResponsiveText(x=0, y=0, width="100%", height=15, text=name, size=10, color=COLOR_TEXT_SEC, align="center")
+            wrapper.add_child(viz); wrapper.add_child(lbl)
+            row.add_child(wrapper)
             
-            lbl = ResponsiveText(x=0, y=0, width="100%", height=20, text=name, size=12, color=COLOR_TEXT_SEC, align="center")
+        sec.add_child(row)
+        return sec
+
+    def _create_align_playground(self):
+        sec = FlexBox(x=0, y=0, width="100%", height="auto", flex_direction="column", gap=10)
+        label = ResponsiveText(x=0, y=0, width="100%", height="auto",
+                              text="Align Items (Vertical Alignment)",
+                              size=18, color=COLOR_TEXT_MAIN)
+        sec.add_child(label)
+        
+        row = FlexBox(x=0, y=0, width="100%", height=120, flex_direction="row", gap=10)
+        configs = [
+            ("flex_start", "Start"), ("center", "Center"), ("flex_end", "End"), ("stretch", "Stretch")
+        ]
+        
+        for mode, name in configs:
+            viz = FlexBox(x=0, y=0, width="auto", height="100%", flex_direction="row",
+                         justify_content="center", align_items=mode, padding=5, gap=5)
+            viz.set_flex_grow(1).set_color((40, 40, 45, 255)).set_radius(8)
             
-            wrapper.add_child(viz)
-            wrapper.add_child(lbl)
-            
+            # Use different heights to show alignment
+            h_list = [20, 40, 30]
+            for i, h in enumerate(h_list):
+                # If stretch, we set height to 0 or auto but FlexNode stretch overrides if basis is auto
+                final_h = 0 if mode == "stretch" else h
+                dot = FlexBox(x=0, y=0, width=15, height=final_h)
+                dot.set_color(COLOR_SUCCESS)
+                # dot.set_radius(4) # Keep it simple for now
+                viz.add_child(dot)
+                
+            wrapper = FlexBox(x=0, y=0, width="auto", height="100%", flex_direction="column", gap=5)
+            wrapper.set_flex_grow(1)
+            lbl = ResponsiveText(x=0, y=0, width="100%", height=15, text=name, size=10, color=COLOR_TEXT_SEC, align="center")
+            wrapper.add_child(viz); wrapper.add_child(lbl)
             row.add_child(wrapper)
             
         sec.add_child(row)
