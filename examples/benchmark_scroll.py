@@ -27,10 +27,7 @@ def run_benchmark():
             header.set_background_color(26, 26, 27, 255)
             ResponsiveText(0, 0, "auto", "auto", text="**Benchmark**", size=20, color=(255, 255, 255, 255), markup=True, margin=(13, 0, 0, 0))
 
-        # --- CONTENT LAYER ---
-        # Pre-populate with a LOT of items to stress test layout even if they are not all visible (if culling is bad)
-        # OR populate dynamically to match valid scrolling behavior.
-        # Let's pre-populate 50 items.
+        # Content Layer: Pre-populate with items.
         with ScrollableLayer(0, 50, "100%", 750, id="feed") as scroll_layer:
             with VBox(0, 0, "100%", "auto", padding=(0, 10, 0, 10)) as content_vbox:
                 for i in range(50):

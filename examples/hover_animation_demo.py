@@ -40,11 +40,6 @@ class AnimatedItem:
 
     def update(self, dt, mx, my):
         # Hit Test
-        # Note: For scaling items, we should ideally test against the *visual* rect or the *base* rect?
-        # Usually base rect avoids jitter at edges, but visual rect feels more natural.
-        # Let's use current visual rect logic (handled by hit_test rect usage) 
-        # BUT for stability, let's test against the BASE rect for the trigger area to avoid 
-        # "mouse barely in -> expands -> mouse definitely in" loops or reverse "mouse out -> shrinks -> mouse in" loops.
         # Stability is key. Base rect is safer.
         is_hovered = (self.base_x <= mx < self.base_x + self.base_w) and \
                      (self.base_y <= my < self.base_y + self.base_h)

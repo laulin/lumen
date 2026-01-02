@@ -58,10 +58,7 @@ class TestInputMultilineNav(unittest.TestCase):
         # Move cursor to end (Line 10).
         input_box.cursor_pos = len(lines)
 
-        # Trigger update scroll via dummy key event or manual call
-        # Since _update_scroll is internal, we can call handling logic or trigger via key.
-        # Let's use down key at end to force update? Or insert.
-        # Just insert a char at end.
+        # Trigger update scroll.
         input_box._insert_text("B", self.context)
 
         # Cursor is at line 10. y = 10 * 20 = 200.

@@ -42,6 +42,6 @@ class Debug:
         }
 
         # Render at 10,10. Size 100x20 is arbitrary for resolving?
-        # Actually _render_text uses rect for positioning and wrapping.
+        # _render_text uses rect for positioning and wrapping.
         # Fixed size ensures it renders within this area.
         renderer.render_item_direct(debug_item, (10, 10, 100, 20))

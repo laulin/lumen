@@ -31,13 +31,7 @@ class TestE2EDump(unittest.TestCase):
             client = DebugClient(port=port)
             client.connect()
             
-            # We want to capture the client's output or just check the response
-            # Since client._send prints, we'll patch print or just call the methods
-            
-            # Let's verify the response directly from the socket if we want to be sure,
-            # or just use the client's send_command logic.
-            
-            # We'll use a local helper to capture what client receives
+            # Verify the response directly from the socket or use the client's send_command logic.
             client.sock.sendall((json.dumps({"type": "dump_display_list"}) + "\n").encode('utf-8'))
             
             # Wait for response

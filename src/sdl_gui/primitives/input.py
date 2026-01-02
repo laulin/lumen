@@ -159,12 +159,9 @@ class Input(BasePrimitive):
                      # Double click: Select Word
                      self._set_cursor_from_mouse(local_x, local_y, context)
                      self._select_word_at_cursor()
-                     # In drag mode, we might want to extend word selection?
-                     # For simplicity, double click selects word, subsequent drag extends char by char or word by word?
-                     # Standard behavior: drag after double click extends by word. Complex.
-                     # Let's stick to simple drag first.
+                     # Double click selects word, subsequent drag extends char by char or word by word.
+                     # Drag selection is the standard behavior.
                      self.dragging = False # Stop dragging on double click to avoid immediate override?
-                     # Actually standard is drag selection. But let's keep it simple.
                  elif self.click_count == 3:
                      # Triple click: Select All
                      self.selection_start = 0
@@ -419,9 +416,7 @@ class Input(BasePrimitive):
     def _redo(self):
         if not self.redo_stack: return
 
-        # Save current to history logic?
-        # Actually standard redo pops from redo stack and pushes to history.
-
+        # Standard redo: pops from redo stack and pushes to history.
         self.history.append((self.text, self.cursor_pos, self.selection_start))
         state = self.redo_stack.pop()
         self.text, self.cursor_pos, self.selection_start = state

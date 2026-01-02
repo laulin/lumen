@@ -53,7 +53,7 @@ class DebugServer:
                 self.server_socket.close()
             except Exception:
                 pass
-        # Wait for thread? Daemon thread will accept being killed by interpreter exit,
+        # Daemon thread will accept being killed by interpreter exit,
         # but manual join is polite if we have time.
 
     def _run_server(self) -> None:

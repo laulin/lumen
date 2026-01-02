@@ -165,9 +165,7 @@ class TestWindow(unittest.TestCase):
         win = Window("Test", 800, 600)
 
         # Text that needs wrapping (width 100, surface w=50. Two words.)
-        # Logic: measure "Word1" -> 50. measure "Word1 Word2" -> 50 (mocked).
-        # Wait, if I mock render always returning w=50, then "Word1 Word2" is 50, so it fits.
-        # I need side_effect for render to return different sizes.
+        # Use side_effect for render to return different sizes for wrapping simulation.
 
         def render_side_effect(text):
             m = MagicMock()

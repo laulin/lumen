@@ -84,7 +84,7 @@ class MarkdownParser:
         # [ ... ] is a distinct start.
         # ** is a distinct start.
 
-        # Let's search for next special char: '[' or '*'
+        # Search for next special char: '[' or '*'
 
         i = 0
         while i < len(text):
@@ -120,12 +120,11 @@ class MarkdownParser:
                     # Recurse for inner text with bold=True
                     inner_segments = self._parse_recursive(inner_text, not bold, color, link) # Toggle bold? typically force True.
                     # Markdown ** toggles? Usually enables. Nested **? **a **b** c** -> a b c (bold).
-                    # Let's assume ** sets bold=True.
-                    # Actually standard markdown: **a** is bold. **a **b** c** is ambiguous or valid.
-                    # Let's simple toggle approach or sets to True.
+                    # Standard markdown: **a** is bold. **a **b** c** is ambiguous or valid.
+                    # Simple toggle approach or sets to True.
                     # "Text **Bold** Text" -> Regular, Bold, Regular.
                     # "Text **Bold **Nested** Bold**" -> usually parsing fails or unbolds?
-                    # Let's just set bold=True for inner.
+                    # Set bold=True for inner.
 
                     segments.extend(self._parse_recursive(inner_text, True, color, link))
                     i = end_bold + 2
