@@ -35,11 +35,18 @@ class ResponsiveText(BasePrimitive):
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_TEXT
         data[core.KEY_TEXT] = self.text
-        data[core.KEY_FONT] = self.font
-        data[core.KEY_FONT_SIZE] = self.size
-        data[core.KEY_COLOR] = self.color
-        data[core.KEY_ALIGN] = self.align
-        data[core.KEY_WRAP] = self.wrap
-        data[core.KEY_ELLIPSIS] = self.ellipsis
-        data[core.KEY_MARKUP] = self.markup
+        if self.font:
+            data[core.KEY_FONT] = self.font
+        if self.size != 16:
+            data[core.KEY_FONT_SIZE] = self.size
+        if self.color != (0, 0, 0, 255):
+            data[core.KEY_COLOR] = self.color
+        if self.align != "left":
+            data[core.KEY_ALIGN] = self.align
+        if not self.wrap:
+            data[core.KEY_WRAP] = self.wrap
+        if not self.ellipsis:
+            data[core.KEY_ELLIPSIS] = self.ellipsis
+        if not self.markup: # Default is True now
+            data[core.KEY_MARKUP] = self.markup
         return data

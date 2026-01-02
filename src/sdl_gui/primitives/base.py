@@ -53,17 +53,20 @@ class BasePrimitive(ABC):
                 return (val[0], val[0], val[0], val[0])
         return (0, 0, 0, 0)
 
-    @abstractmethod
     def to_data(self) -> Dict[str, Any]:
         """Generate common data fields."""
         data = {
-            core.KEY_RECT: [self.x, self.y, self.width, self.height],
-            core.KEY_PADDING: self.padding,
-            core.KEY_MARGIN: self.margin
+            core.KEY_RECT: [self.x, self.y, self.width, self.height]
         }
+        if self.padding != (0, 0, 0, 0):
+            data[core.KEY_PADDING] = self.padding
+        if self.margin != (0, 0, 0, 0):
+            data[core.KEY_MARGIN] = self.margin
         if self.id:
             data[core.KEY_ID] = self.id
         if self.listen_events:
+            # We skip listen_events if it's empty, but some components might want to ensure they are there.
+            # However, Renderer handles missing listen_events as [].
             data[core.KEY_LISTEN_EVENTS] = self.listen_events
 
         # Merge extra properties (e.g. background color)

@@ -28,7 +28,8 @@ class Rectangle(BasePrimitive):
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_RECT
         data["color"] = self.color
-        data[core.KEY_RADIUS] = self.radius
+        if self.radius > 0:
+            data[core.KEY_RADIUS] = self.radius
         if self.border_color and self.border_width > 0:
             data[core.KEY_BORDER_COLOR] = self.border_color
             data[core.KEY_BORDER_WIDTH] = self.border_width

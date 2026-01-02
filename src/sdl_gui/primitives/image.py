@@ -27,5 +27,6 @@ class Image(BasePrimitive):
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_IMAGE
         data[core.KEY_SOURCE] = self.source
-        data[core.KEY_SCALE_MODE] = self.scale_mode
+        if self.scale_mode != "fit":
+            data[core.KEY_SCALE_MODE] = self.scale_mode
         return data

@@ -347,7 +347,7 @@ class Renderer:
         self._flush_render_queue()
         if not self.ttf_available or not item.get(core.KEY_TEXT, ""): return
 
-        if item.get(core.KEY_MARKUP, False):
+        if item.get(core.KEY_MARKUP, True):
              self._render_rich_text(item, rect)
              return
 
@@ -651,7 +651,7 @@ class Renderer:
         size = self._get_resolved_font_size(item, parent_height)
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
 
-        if item.get(core.KEY_MARKUP, False):
+        if item.get(core.KEY_MARKUP, True):
              parser = markdown.MarkdownParser(default_color=color)
              segments = parser.parse(text)
              total_w = 0
@@ -665,7 +665,7 @@ class Renderer:
         return 0
 
     def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
-        if item.get(core.KEY_MARKUP, False): return self._measure_rich_text_height(item, width, parent_height)
+        if item.get(core.KEY_MARKUP, True): return self._measure_rich_text_height(item, width, parent_height)
         else: return 20
 
     def _measure_rich_text_height(self, item: Dict[str, Any], width: int, parent_height: int) -> int:

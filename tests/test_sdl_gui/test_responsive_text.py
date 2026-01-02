@@ -28,8 +28,8 @@ class TestResponsiveText(unittest.TestCase):
         self.assertEqual(data[core.KEY_FONT_SIZE], "50%")
         self.assertEqual(data[core.KEY_COLOR], (255, 0, 0, 255))
         self.assertEqual(data[core.KEY_ALIGN], "center")
-        self.assertTrue(data[core.KEY_WRAP])
-        self.assertTrue(data[core.KEY_ELLIPSIS])
+        self.assertTrue(data.get(core.KEY_WRAP, True))
+        self.assertTrue(data.get(core.KEY_ELLIPSIS, True))
         self.assertEqual(data[core.KEY_ID], "txt1")
         self.assertEqual(data[core.KEY_RECT], [10, 10, 100, 30])
 

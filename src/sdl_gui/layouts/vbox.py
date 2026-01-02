@@ -22,5 +22,6 @@ class VBox(Container):
         """Generate VBox data."""
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_VBOX
-        data[core.KEY_CHILDREN] = [child.to_data() for child in self.children]
+        if self.children:
+            data[core.KEY_CHILDREN] = [child.to_data() for child in self.children]
         return data

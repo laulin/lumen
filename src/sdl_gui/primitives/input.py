@@ -76,26 +76,41 @@ class Input(BasePrimitive):
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_INPUT
         data[core.KEY_TEXT] = self.text
-        data["placeholder"] = self.placeholder
-        data[core.KEY_FONT] = self.font
-        data[core.KEY_FONT_SIZE] = self.size
-        data[core.KEY_COLOR] = self.color
-        data["background_color"] = self.background_color
+        if self.placeholder:
+            data["placeholder"] = self.placeholder
+        if self.font:
+            data[core.KEY_FONT] = self.font
+        if self.size != 16:
+            data[core.KEY_FONT_SIZE] = self.size
+        if self.color != (0, 0, 0, 255):
+            data[core.KEY_COLOR] = self.color
+        if self.background_color != (255, 255, 255, 255):
+            data["background_color"] = self.background_color
 
-        if self.border_color and self.border_width > 0:
+        if self.border_color != (0, 0, 0, 255) and self.border_width > 0:
             data[core.KEY_BORDER_COLOR] = self.border_color
             data[core.KEY_BORDER_WIDTH] = self.border_width
+        elif self.border_width != 1 and self.border_width > 0:
+            data[core.KEY_BORDER_WIDTH] = self.border_width
 
-        data[core.KEY_RADIUS] = self.radius
-        data["multiline"] = self.multiline
+        if self.radius > 0:
+            data[core.KEY_RADIUS] = self.radius
+        if self.multiline:
+            data["multiline"] = self.multiline
 
         # Internal state needed for rendering
-        data["cursor_pos"] = self.cursor_pos
-        data["selection_start"] = self.selection_start
-        data["focused"] = self.focused
-        data["cursor_visible"] = self.cursor_visible
-        data["scroll_x"] = self.scroll_x
-        data["scroll_y"] = self.scroll_y
+        if self.cursor_pos != 0:
+            data["cursor_pos"] = self.cursor_pos
+        if self.selection_start is not None:
+            data["selection_start"] = self.selection_start
+        if self.focused:
+            data["focused"] = self.focused
+        if not self.cursor_visible:
+            data["cursor_visible"] = self.cursor_visible
+        if self.scroll_x != 0:
+            data["scroll_x"] = self.scroll_x
+        if self.scroll_y != 0:
+            data["scroll_y"] = self.scroll_y
 
         return data
 
