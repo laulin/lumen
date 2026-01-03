@@ -50,6 +50,11 @@ class DebugClient:
         payload = {"type": "dump_display_list"}
         return self._send_and_receive(payload)
 
+    def get_pixel(self, x: int, y: int) -> Dict[str, Any]:
+        """Get the RGBA color of the pixel at (x, y)."""
+        payload = {"type": "get_pixel", "x": x, "y": y}
+        return self._send_and_receive(payload)
+
     def resize(self, width: int, height: int) -> Dict[str, Any]:
         """Resize the window."""
         return self.send_command("resize", width=width, height=height)

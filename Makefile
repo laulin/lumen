@@ -1,4 +1,4 @@
-.PHONY: test lint type-check clean
+.PHONY: test lint type-check clean integration
 
 PYTHON = ./.env/bin/python3
 
@@ -11,6 +11,9 @@ lint:
 
 type-check:
 	PYTHONPATH=src $(PYTHON) -m mypy src tests
+
+integration:
+	PYTHONPATH=src $(PYTHON) tests/integration/test_suite.py
 
 
 clean:

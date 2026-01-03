@@ -99,6 +99,14 @@ class Window:
             for action_type, data in self.debug_server.get_pending_actions():
                 if action_type == "event":
                     ui_events.append(data)
+                elif action_type == "get_pixel":
+                    # data is (x, y, res_queue)
+                    x, y, res_queue = data
+                    try:
+                        color = self.renderer.get_pixel(x, y)
+                        res_queue.put(color)
+                    except Exception as e:
+                        res_queue.put(e)
                 elif action_type == "command":
                     val = data.get("action")
                     if val == "quit":

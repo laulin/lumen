@@ -105,6 +105,7 @@ class Renderer:
 
     def save_screenshot(self, filename: str) -> None:
         w, h = self.window.size
+        # Use ARGB8888 as it's common and well-supported for reading pixels
         surface = sdl2.SDL_CreateRGBSurface(0, w, h, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000)
         sdl2.SDL_RenderReadPixels(self.renderer.sdlrenderer, None,
                                   sdl2.SDL_PIXELFORMAT_ARGB8888,
@@ -112,6 +113,38 @@ class Renderer:
                                   surface.contents.pitch)
         sdl2.SDL_SaveBMP(surface, filename.encode('utf-8'))
         sdl2.SDL_FreeSurface(surface)
+
+    def get_pixel(self, x: int, y: int) -> Tuple[int, int, int, int]:
+        """
+        Get the RGBA color of the pixel at (x, y).
+        
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            
+        Returns:
+            A tuple of (R, G, B, A)
+        """
+        rect = sdl2.SDL_Rect(x, y, 1, 1)
+        # We use ABGR8888 which, on little-endian systems, results in R, G, B, A byte order in memory.
+        pixels = ctypes.create_string_buffer(4)
+        sdl2.SDL_RenderReadPixels(
+            self.renderer.sdlrenderer,
+            rect,
+            sdl2.SDL_PIXELFORMAT_ABGR8888,
+            pixels,
+            4
+        )
+        
+        # In Python 3, pixels.raw is a bytes object
+        # RGBA8888 means R is the first byte, then G, then B, then A
+        # regardless of endianness when treated as bytes.
+        r = pixels.raw[0]
+        g = pixels.raw[1]
+        b = pixels.raw[2]
+        a = pixels.raw[3]
+        
+        return (r, g, b, a)
 
     def render_list(self, display_list: List[Dict[str, Any]]) -> None:
         width, height = self.window.size

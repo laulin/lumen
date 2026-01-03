@@ -125,6 +125,23 @@ class DebugServer:
                 else:
                     self._send_response(conn, "error", "Display list provider not set")
 
+            elif cmd_type == "get_pixel":
+                x = payload.get("x", 0)
+                y = payload.get("y", 0)
+                # We need to run this in the main thread.
+                # Use a small queue to get the result back from the main thread
+                res_queue = Queue()
+                self.command_queue.put(("get_pixel", (x, y, res_queue)))
+                try:
+                    # Wait for the main thread to process and return the result
+                    result = res_queue.get(timeout=2.0)
+                    if isinstance(result, Exception):
+                        self._send_response(conn, "error", str(result))
+                    else:
+                        self._send_response(conn, "ok", data=result)
+                except Exception as e:
+                    self._send_response(conn, "error", f"Timeout waiting for pixel data: {e}")
+
             else:
                 self._send_response(conn, "error", "Unknown type")
 
