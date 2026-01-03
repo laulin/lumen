@@ -8,6 +8,9 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../src')))
 
 from sdl_gui.debug.client import DebugClient
+from test_visual_rendering import TestVisualRendering
+from benchmark_rects import TestBenchmarkRects
+from benchmark_scroll import TestBenchmarkScroll
 
 class TestFlexboxIntegration(unittest.TestCase):
     @classmethod
