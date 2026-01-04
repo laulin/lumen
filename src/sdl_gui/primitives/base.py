@@ -117,6 +117,10 @@ class BasePrimitive(ABC):
                     else:
                         val = args # tuple
 
+                    # Normalize Spacing
+                    if key in ('padding', 'margin'):
+                         val = self._normalize_spacing(val)
+
                     # Normalize Color
                     if key in ('color', 'background_color', 'border_color'):
                          if isinstance(val, (tuple, list)):

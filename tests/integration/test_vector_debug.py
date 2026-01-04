@@ -7,6 +7,9 @@ import sdl2
 from sdl_gui import core
 from sdl_gui.window.window import Window
 from sdl_gui.primitives.vector_graphics import VectorGraphics
+from sdl_gui.layers.layer import Layer
+from sdl_gui.layers.scrollable_layer import ScrollableLayer
+from sdl_gui.layouts.vbox import VBox
 from sdl_gui.debug.client import DebugClient
 
 class TestVectorGraphicsDebug(unittest.TestCase):
@@ -208,6 +211,111 @@ class TestVectorGraphicsDebug(unittest.TestCase):
                  color = tuple(resp.get("data"))
                  if color != (255, 255, 255, 255):
                      results["errors"].append(f"Rect 2 border at (50,10) should be White, got {color}")
+
+        self.run_vector_test(setup, validate)
+
+    def test_relative_layer_positioning(self):
+        """Test that VG inside a Layer is rendered at layer_pos + vg_pos."""
+        def setup(window):
+            # Layer at (50, 50)
+            layer = Layer(50, 50, 100, 100)
+            
+            # VG at (10, 10) inside Layer
+            vg = VectorGraphics(10, 10, 50, 50, id="vg_layer_pos")
+            # Draw rect at (0,0) in VG coords
+            vg.fill((0, 255, 0, 255))
+            vg.stroke((0, 0, 0, 0), width=0)
+            vg.rect(0, 0, 20, 20)
+            
+            layer.add_child(vg)
+            window.add_child(layer)
+
+        def validate(client, results):
+            # Target Pixel Global:
+            # Layer X (50) + VG X (10) + Rect X (0) = 60
+            # Layer Y (50) + VG Y (10) + Rect Y (0) = 60
+            # Center of rect (0,0,20,20) relative to VG is (10,10)
+            # So Global Check at (60+10, 60+10) = (70, 70)
+            
+            resp = client.get_pixel(70, 70)
+            if resp.get("status") == "ok":
+                color = tuple(resp.get("data"))
+                if color != (0, 255, 0, 255):
+                    results["errors"].append(f"Pixel at (70,70) should be Green (Layer Pos), got {color}")
+            else:
+                results["errors"].append(f"Failed to get pixel: {resp}")
+
+        self.run_vector_test(setup, validate)
+
+    def test_relative_primitive_positioning(self):
+        """Test that VG inside a VBox with padding is offset correctly."""
+        def setup(window):
+            # VBox at (0,0) with Padding 20
+            vbox = VBox(0, 0, 200, 200)
+            vbox.set_padding(20)
+            
+            # VG inside VBox
+            # In simple layout, VBox should position child at (padding, padding) + child margin (0)
+            vg = VectorGraphics(0, 0, 50, 50, id="vg_vbox_pos")
+            vg.fill((0, 0, 255, 255))
+            vg.stroke((0,0,0,0), width=0)
+            vg.rect(0, 0, 20, 20)
+            
+            vbox.add_child(vg)
+            window.add_child(vbox)
+
+        def validate(client, results):
+            # Target Pixel Global:
+            # VBox (0,0) + Padding (20,20) = VG Origin (20,20)
+            # Rect at (0,0) in VG. Center (10,10).
+            # Global: (20+10, 20+10) = (30, 30)
+            
+            resp = client.get_pixel(30, 30)
+            if resp.get("status") == "ok":
+                color = tuple(resp.get("data"))
+                if color != (0, 0, 255, 255):
+                     results["errors"].append(f"Pixel at (30,30) should be Blue (VBox Padding), got {color}")
+            else:
+                 results["errors"].append(f"Failed to get pixel: {resp}")
+
+        self.run_vector_test(setup, validate)
+        
+    def test_clipping_behavior(self):
+        """Test that VG content outside parent bounds is clipped."""
+        def setup(window):
+            # ScrollableLayer acts as a clipping container.
+            # Pos (50, 50), Size (100, 100). Global Clip Region: (50,50,100,100) -> ends at (150,150)
+            clip_layer = ScrollableLayer(50, 50, 100, 100)
+            
+            # Large VG inside, at (0,0) relative to layer (so 50,50 global)
+            vg = VectorGraphics(0, 0, 200, 200, id="vg_clipped")
+            vg.fill((255, 0, 0, 255)) # Red
+            vg.stroke((0,0,0,0), width=0)
+            # Draw rect from (0,0) to (200,50) -> a long horizontal bar
+            vg.rect(0, 0, 200, 50)
+            
+            clip_layer.add_child(vg)
+            window.add_child(clip_layer)
+        
+        def validate(client, results):
+            # 1. Inside Clip Region
+            # VG Start (50,50). Rect covers (50,50) to (250, 100).
+            # Clip ends at x=150.
+            # Check x=100 (Global). Should be Red.
+            resp = client.get_pixel(100, 60) # y=60 is inside the rect (50..100)
+            if resp.get("status") == "ok":
+                color = tuple(resp.get("data"))
+                if color != (255, 0, 0, 255):
+                    results["errors"].append(f"Pixel at (100,60) should be Red (Inside Clip), got {color}")
+            
+            # 2. Outside Clip Region
+            # Check x=160 (Global). VG content exists here, but should be clipped.
+            # Expected color: Background (Transparent/Black)
+            resp = client.get_pixel(160, 60)
+            if resp.get("status") == "ok":
+                color = tuple(resp.get("data"))
+                if color == (255, 0, 0, 255):
+                    results["errors"].append(f"Pixel at (160,60) should NOT be Red (Clipped), got {color}")
 
         self.run_vector_test(setup, validate)
 

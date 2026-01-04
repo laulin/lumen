@@ -202,7 +202,6 @@ class Renderer:
 
         self._hit_list.append((current_rect, item))
         item_type = item.get(core.KEY_TYPE)
-        print(f"DEBUG_RENDER_ITEM: {item_type} id={item.get(core.KEY_ID)}")
 
         if item_type == core.TYPE_LAYER:
             for child in item.get(core.KEY_CHILDREN, []):
@@ -513,6 +512,8 @@ class Renderer:
              self._render_image(item, rect)
         elif typ == core.TYPE_INPUT:
              self._render_input(item, rect)
+        elif typ == core.TYPE_VECTOR_GRAPHICS:
+             self._render_vector_graphics(item, rect)
 
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
@@ -816,7 +817,6 @@ class Renderer:
     def _render_vector_graphics(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         """Render vector graphics instructions, utilizing caching."""
         x, y, w, h = rect
-        print(f"DEBUG_VG: rect={rect}")
         if w <= 0 or h <= 0: return
 
         # Check Usage of Cache
