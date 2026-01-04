@@ -952,10 +952,11 @@ class Renderer:
             elif ctype == core.CMD_LINE_TO:
                  tx = res_x(cmd.get("x", 0)); ty = res_y(cmd.get("y", 0))
                  if stroke_width == 1:
-                     # Use standard SDL for 1px lines (safer)
-                     sdl2.SDL_SetRenderDrawColor(renderer, *stroke_color_t)
-                     sdl2.SDL_RenderDrawLine(renderer, int(current_x), int(current_y), int(tx), int(ty))
+                     # Use anti-aliased line for 1px
+                     sdlgfx.aalineColor(renderer, int(current_x), int(current_y), int(tx), int(ty), stroke_color)
                  else:
+                     # For thick lines, draw multiple AA lines to simulate thickness
+                     # or use thickLineColor (no AA version available)
                      sdlgfx.thickLineColor(renderer, int(current_x), int(current_y), int(tx), int(ty), stroke_width, stroke_color)
                  current_x, current_y = tx, ty
 
@@ -974,7 +975,12 @@ class Renderer:
                       if rr > 0:
                           sdlgfx.roundedRectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, rr, stroke_color)
                       else:
-                          sdlgfx.rectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, stroke_color)
+                          # Use AA lines for rectangle outline
+                          x1, y1, x2, y2 = int(rx), int(ry), int(rx+rw-1), int(ry+rh-1)
+                          sdlgfx.aalineColor(renderer, x1, y1, x2, y1, stroke_color)  # Top
+                          sdlgfx.aalineColor(renderer, x2, y1, x2, y2, stroke_color)  # Right
+                          sdlgfx.aalineColor(renderer, x2, y2, x1, y2, stroke_color)  # Bottom
+                          sdlgfx.aalineColor(renderer, x1, y2, x1, y1, stroke_color)  # Left
 
             elif ctype == core.CMD_CIRCLE:
                  cx = res_x(cmd.get("x", 0)); cy = res_y(cmd.get("y", 0)); r = res_r(cmd.get("r", 0))
