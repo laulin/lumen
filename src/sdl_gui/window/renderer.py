@@ -864,7 +864,30 @@ class Renderer:
         
         # 4. Execute Commands using SW Render
         # We need to pass the sw_renderer to _execute_vector_commands instead of self.renderer.sdlrenderer
-        self._execute_vector_commands(item.get(core.KEY_COMMANDS, []), w, h, renderer_override=sw_renderer)
+        
+        # Resolve Content Area (Percentages are relative to CONTENT area, not full texture)
+        raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
+        # Ensure padding is properly resolved if it's not a tuple of ints (though BasePrimitive norm should handle)
+        # We can assume it's normalized tuple if coming from primitive, but verify resolving against self?
+        # Renderer logic usually resolves relative units. But padding is usually ints or strings?
+        # BasePrimitive _normalize_spacing handles it.
+        # But if padding uses %, we need to resolve it.
+        # Let's assume for now we resolve it here.
+        pt = self._resolve_val(raw_padding[0], h)
+        pr = self._resolve_val(raw_padding[1], w)
+        pb = self._resolve_val(raw_padding[2], h)
+        pl = self._resolve_val(raw_padding[3], w)
+        
+        content_w = max(0, w - pl - pr)
+        content_h = max(0, h - pt - pb)
+        
+        self._execute_vector_commands(
+            item.get(core.KEY_COMMANDS, []), 
+            w, h, 
+            content_w=content_w, content_h=content_h,
+            offset_x=pl, offset_y=pt,
+            renderer_override=sw_renderer
+        )
         
         sdl2.SDL_RenderPresent(sw_renderer)
         
@@ -878,15 +901,27 @@ class Renderer:
         sdl2.SDL_SetTextureBlendMode(texture, sdl2.SDL_BLENDMODE_BLEND)
         return RawTexture(self.renderer, texture)
 
-    def _execute_vector_commands(self, commands: List[Dict[str, Any]], w: int, h: int, renderer_override=None):
+    def _execute_vector_commands(self, commands: List[Dict[str, Any]], w: int, h: int, 
+                                 content_w: int = None, content_h: int = None, 
+                                 offset_x: int = 0, offset_y: int = 0,
+                                 renderer_override=None):
         renderer = renderer_override if renderer_override else self.renderer.sdlrenderer
         
+        cw = content_w if content_w is not None else w
+        ch = content_h if content_h is not None else h
+        
+        def res_x(val): return self._resolve_val(val, cw) + offset_x
+        def res_y(val): return self._resolve_val(val, ch) + offset_y
+        def res_w(val): return self._resolve_val(val, cw)
+        def res_h(val): return self._resolve_val(val, ch)
+        def res_r(val): return self._resolve_val(val, min(cw, ch)) # Helper for radius? Or just use one dim?
+
         # State
         stroke_color = self._to_sdlgfx_color((255, 255, 255, 255)) # Default white
         stroke_color_t = (255, 255, 255, 255)
         fill_color = None
         fill_color_t = None
-        current_x, current_y = 0, 0
+        current_x, current_y = offset_x, offset_y # Start at 0,0 relative to content
         stroke_width = 1
 
         for cmd in commands:
@@ -908,11 +943,11 @@ class Renderer:
                      fill_color_t = None
 
             elif ctype == core.CMD_MOVE_TO:
-                 current_x = cmd.get("x", 0)
-                 current_y = cmd.get("y", 0)
+                 current_x = res_x(cmd.get("x", 0))
+                 current_y = res_y(cmd.get("y", 0))
 
             elif ctype == core.CMD_LINE_TO:
-                 tx = cmd.get("x", 0); ty = cmd.get("y", 0)
+                 tx = res_x(cmd.get("x", 0)); ty = res_y(cmd.get("y", 0))
                  if stroke_width == 1:
                      # Use standard SDL for 1px lines (safer)
                      sdl2.SDL_SetRenderDrawColor(renderer, *stroke_color_t)
@@ -922,10 +957,9 @@ class Renderer:
                  current_x, current_y = tx, ty
 
             elif ctype == core.CMD_RECT:
-                 # TODO: Apply fill and stroke
-                 rx = cmd.get("x", 0); ry = cmd.get("y", 0)
-                 rw = cmd.get("w", 0); rh = cmd.get("h", 0)
-                 rr = cmd.get("r", 0)
+                 rx = res_x(cmd.get("x", 0)); ry = res_y(cmd.get("y", 0))
+                 rw = res_w(cmd.get("w", 0)); rh = res_h(cmd.get("h", 0))
+                 rr = res_r(cmd.get("r", 0))
                  
                  if fill_color is not None:
                      if rr > 0:
@@ -934,26 +968,25 @@ class Renderer:
                          sdlgfx.boxColor(renderer, rx, ry, rx+rw-1, ry+rh-1, fill_color)
                          
                  if stroke_width > 0:
-                      # sdlgfx doesn't have thick rects easily, so we might need 4 lines or roundedRectangle
                       if rr > 0:
                           sdlgfx.roundedRectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, rr, stroke_color)
                       else:
                           sdlgfx.rectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, stroke_color)
 
             elif ctype == core.CMD_CIRCLE:
-                 cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                 cx = res_x(cmd.get("x", 0)); cy = res_y(cmd.get("y", 0)); r = res_r(cmd.get("r", 0))
                  if fill_color is not None:
                       sdlgfx.filledCircleColor(renderer, cx, cy, r, fill_color)
                  if stroke_width > 0:
                       sdlgfx.aacircleColor(renderer, cx, cy, r, stroke_color)
 
             elif ctype == core.CMD_ARC:
-                  cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                  cx = res_x(cmd.get("x", 0)); cy = res_y(cmd.get("y", 0)); r = res_r(cmd.get("r", 0))
                   start = cmd.get("start", 0); end = cmd.get("end", 0)
                   sdlgfx.arcColor(renderer, cx, cy, r, start, end, stroke_color)
 
             elif ctype == core.CMD_PIE:
-                  cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                  cx = res_x(cmd.get("x", 0)); cy = res_y(cmd.get("y", 0)); r = res_r(cmd.get("r", 0))
                   start = cmd.get("start", 0); end = cmd.get("end", 0)
                   if fill_color is not None:
                       sdlgfx.filledPieColor(renderer, cx, cy, r, start, end, fill_color)
@@ -961,13 +994,13 @@ class Renderer:
                       sdlgfx.pieColor(renderer, cx, cy, r, start, end, stroke_color)
             
             elif ctype == core.CMD_CURVE_TO:
-                  cx1 = cmd.get("cx1"); cy1 = cmd.get("cy1")
-                  cx2 = cmd.get("cx2"); cy2 = cmd.get("cy2")
-                  tx = cmd.get("x"); ty = cmd.get("y")
+                  cx1 = res_x(cmd.get("cx1")); cy1 = res_y(cmd.get("cy1"))
+                  cx2 = res_x(cmd.get("cx2")); cy2 = res_y(cmd.get("cy2"))
+                  tx = res_x(cmd.get("x")); ty = res_y(cmd.get("y"))
                   sdlgfx.bezierColor(renderer, 
                       (ctypes.c_short * 4)(int(current_x), int(cx1), int(cx2), int(tx)),
                       (ctypes.c_short * 4)(int(current_y), int(cy1), int(cy2), int(ty)),
-                      4, 100, stroke_color) # what steps? 100?
+                      4, 100, stroke_color) 
                   current_x, current_y = tx, ty
 
 

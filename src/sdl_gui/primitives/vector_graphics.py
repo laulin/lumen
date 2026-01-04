@@ -31,15 +31,15 @@ class VectorGraphics(BasePrimitive):
         self.commands.append({core.CMD_TYPE: core.CMD_CLEAR})
         return self
 
-    def move_to(self, x: int, y: int):
+    def move_to(self, x: Union[int, str], y: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_MOVE_TO, "x": x, "y": y})
         return self
 
-    def line_to(self, x: int, y: int):
+    def line_to(self, x: Union[int, str], y: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_LINE_TO, "x": x, "y": y})
         return self
 
-    def curve_to(self, cx1: int, cy1: int, cx2: int, cy2: int, x: int, y: int):
+    def curve_to(self, cx1: Union[int, str], cy1: Union[int, str], cx2: Union[int, str], cy2: Union[int, str], x: Union[int, str], y: Union[int, str]):
         """Cubic bezier curve."""
         self.commands.append({
             core.CMD_TYPE: core.CMD_CURVE_TO, 
@@ -49,7 +49,7 @@ class VectorGraphics(BasePrimitive):
         })
         return self
 
-    def arc(self, x: int, y: int, r: int, start: int, end: int):
+    def arc(self, x: Union[int, str], y: Union[int, str], r: Union[int, str], start: int, end: int):
         self.commands.append({
             core.CMD_TYPE: core.CMD_ARC,
             "x": x, "y": y, "r": r,
@@ -57,11 +57,11 @@ class VectorGraphics(BasePrimitive):
         })
         return self
         
-    def circle(self, x: int, y: int, r: int):
+    def circle(self, x: Union[int, str], y: Union[int, str], r: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_CIRCLE, "x": x, "y": y, "r": r})
         return self
 
-    def pie(self, x: int, y: int, r: int, start: int, end: int):
+    def pie(self, x: Union[int, str], y: Union[int, str], r: Union[int, str], start: int, end: int):
         self.commands.append({
             core.CMD_TYPE: core.CMD_PIE,
             "x": x, "y": y, "r": r,
@@ -69,7 +69,7 @@ class VectorGraphics(BasePrimitive):
         })
         return self
 
-    def rect(self, x: int, y: int, w: int, h: int, r: int = 0):
+    def rect(self, x: Union[int, str], y: Union[int, str], w: Union[int, str], h: Union[int, str], r: Union[int, str] = 0):
         self.commands.append({
             core.CMD_TYPE: core.CMD_RECT,
             "x": x, "y": y, "w": w, "h": h, "r": r

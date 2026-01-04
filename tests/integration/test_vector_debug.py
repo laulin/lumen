@@ -317,7 +317,114 @@ class TestVectorGraphicsDebug(unittest.TestCase):
                 if color == (255, 0, 0, 255):
                     results["errors"].append(f"Pixel at (160,60) should NOT be Red (Clipped), got {color}")
 
+    def test_vector_percentages(self):
+        """Test vector graphics using percentage coordinates with padding."""
+        
+        def setup(window):
+            # 1. VG directly in Window (200x200), with Padding 20
+            # Content box: 200 - 20 - 20 = 160x160.
+            # 0% = 20px. 100% = 180px.
+            # Test Line: 10% -> 90%.
+            # 10% of 160 = 16. + 20 = 36.
+            # 90% of 160 = 144. + 20 = 164.
+            # Global: (36, 36) -> (164, 164).
+            
+            vg = VectorGraphics(0, 0, 200, 200, padding=20, id="vg_pct")
+            vg.stroke((255, 255, 0, 255), width=2) # Yellow
+            vg.move_to("10%", "10%")
+            vg.line_to("90%", "90%")
+            
+            window.add_child(vg)
+            
+            # 2. Add Layer/VBox test cases? 
+            # The prompt requested: "directly in window, in a layer, and in a rectangle (container)".
+            # We can use separate VGs for simplicity or run sub-tests. 
+            # Given run_vector_test limitation (one setup), we'll add multiple VGs in different positions.
+            
+            # Layer Context
+            # Layer at (0, 0) to avoid offset math confusion.
+            layer = Layer(0, 0, 200, 200)
+            # VG in Layer. Small size (100x100). Padding (10).
+            # Content: 80x80.
+            # 10%(8) -> 90%(72).
+            # Offset 10.
+            # Local: 18 -> 82.
+            # Global (Layer is 0,0, VG is at 100,0? Let's place it at 100,0)
+            vg_layer = VectorGraphics(100, 0, 100, 100, padding=10, id="vg_layer")
+            vg_layer.stroke((0, 255, 255, 255), width=2) # Cyan
+            vg_layer.move_to("0%", "0%") # Should be at padding (10,10) local -> (110, 10) global
+            vg_layer.line_to("100%", "100%") # Should be at (90,90) local -> (190, 90) global
+            
+            layer.add_child(vg_layer)
+            window.add_child(layer)
+            
+            # VBox Context (Rectangle)
+            vbox = VBox(0, 100, 100, 100) # Bottom Left
+            # VG inside. Auto size? Fixed size 100x100.
+            vg_box = VectorGraphics(0,0, 100, 100, padding=0, id="vg_box") # No padding
+            vg_box.stroke((255, 0, 255, 255), width=2) # Magenta
+            vg_box.move_to("50%", "50%") # Center 50,50
+            vg_box.line_to("100%", "50%") # Right 100,50
+            # Global VBox at 0,100. VG at 0,100.
+            # Center: 50, 150.
+            
+            vbox.add_child(vg_box)
+            window.add_child(vbox)
+            
+        def validate(client, results):
+            # 1. Window VG (Yellow)
+            # Check Start (36, 36) - Approximate
+            resp = client.get_pixel(36, 36)
+            if resp.get("status") == "ok":
+                color = tuple(resp.get("data"))
+                # Just check it's not black/transparent. Yellow is (255,255,0,255)
+                # Anti-aliasing might vary exact color, check R and G high
+                if color[0] < 200 or color[1] < 200:
+                    results["errors"].append(f"Window VG: Pixel at (36,36) should be Yellowish, got {color}")
+            
+            # Check End (164, 164) -> 164 might be the very edge or off by one in rasterization.
+            # Check 163, 163.
+            resp = client.get_pixel(163, 163)
+            if resp.get("status") == "ok":
+                 color = tuple(resp.get("data"))
+                 if color[0] < 200 or color[1] < 200:
+                    results["errors"].append(f"Window VG: Pixel at (163,163) should be Yellowish, got {color}")
+            
+            # Check 0% is NOT at 0,0 (Padding is 20)
+            # Pixel at (10, 10) should be empty/black
+            resp = client.get_pixel(10, 10)
+            if resp.get("status") == "ok":
+                 color = tuple(resp.get("data"))
+                 if color[3] > 0 and (color[0]>50 or color[1]>50):
+                      results["errors"].append(f"Window VG: Pixel at (10,10) should be Black (Padding), got {color}")
+
+            # 2. Layer VG (Cyan)
+            # Start 0% -> at padding (10,10) relative to VG (100,0) -> Global (110, 10)
+            resp = client.get_pixel(110, 10)
+            if resp.get("status") == "ok":
+                 color = tuple(resp.get("data"))
+                 # Cyan: 0, 255, 255
+                 if color[1] < 200 or color[2] < 200:
+                     results["errors"].append(f"Layer VG: Pixel at (110,10) should be Cyan, got {color}")
+            
+            # End 100% -> at (190, 90). Check (189, 89)
+            resp = client.get_pixel(189, 89)
+            if resp.get("status") == "ok":
+                 color = tuple(resp.get("data"))
+                 if color[1] < 200 or color[2] < 200:
+                     results["errors"].append(f"Layer VG: Pixel at (189,89) should be Cyan, got {color}")
+
+            # 3. VBox VG (Magenta)
+            # Start 50% -> (50, 50) rel to VG (0,0,100,100) -> global (0+50, 100+50) = (50, 150)
+            resp = client.get_pixel(50, 150)
+            if resp.get("status") == "ok":
+                 color = tuple(resp.get("data"))
+                 # Magenta: 255, 0, 255
+                 if color[0] < 200 or color[2] < 200:
+                      results["errors"].append(f"VBox VG: Pixel at (50,150) should be Magenta, got {color}")
+
         self.run_vector_test(setup, validate)
+
 
 if __name__ == '__main__':
     unittest.main()
