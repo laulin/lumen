@@ -59,3 +59,21 @@ KEY_GAP = "gap"
 KEY_FLEX_GROW = "flex_grow"
 KEY_FLEX_SHRINK = "flex_shrink"
 KEY_FLEX_BASIS = "flex_basis"
+
+# Vector Graphics
+TYPE_VECTOR_GRAPHICS = "vector_graphics"
+
+KEY_COMMANDS = "commands"
+KEY_CACHE_KEY = "cache_key"
+
+CMD_TYPE = "type"
+CMD_MOVE_TO = "move_to"
+CMD_LINE_TO = "line_to"
+CMD_CURVE_TO = "curve_to"
+CMD_ARC = "arc"
+CMD_RECT = "rect"
+CMD_CIRCLE = "circle"
+CMD_PIE = "pie"
+CMD_STROKE = "stroke"
+CMD_FILL = "fill"
+CMD_CLEAR = "clear"

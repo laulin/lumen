@@ -53,6 +53,7 @@ class Renderer:
 
         self._font_cache: Dict[str, sdl2.ext.FontManager] = {}
         self._image_cache: Dict[str, sdl2.ext.Texture] = {}
+        self._vector_cache: Dict[str, sdl2.ext.Texture] = {}
         self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
         self._measurement_cache: Dict[Tuple[str, int], int] = {}
 
@@ -201,6 +202,7 @@ class Renderer:
 
         self._hit_list.append((current_rect, item))
         item_type = item.get(core.KEY_TYPE)
+        print(f"DEBUG_RENDER_ITEM: {item_type} id={item.get(core.KEY_ID)}")
 
         if item_type == core.TYPE_LAYER:
             for child in item.get(core.KEY_CHILDREN, []):
@@ -221,6 +223,8 @@ class Renderer:
             self._render_input(item, current_rect)
         elif item_type == core.TYPE_FLEXBOX:
             self._render_flexbox(item, current_rect, viewport)
+        elif item_type == core.TYPE_VECTOR_GRAPHICS:
+            self._render_vector_graphics(item, current_rect)
 
     def _render_flexbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         """Render a FlexBox item by building a FlexNode tree and resolving layout."""
@@ -798,18 +802,174 @@ class Renderer:
     def _load_image_source(self, source: Union[str, bytes, Callable]) -> Any:
         try: import sdl2.sdlimage as img
         except ImportError: return None
-
-        surface = None
-        if isinstance(source, str): surface = img.IMG_Load(source.encode('utf-8'))
-        elif isinstance(source, (bytes, bytearray)):
-            rw = sdl2.rwops.rw_from_object(source)
-            surface = img.IMG_Load_RW(rw, 0)
+        
+        if isinstance(source, str):
+            return img.IMG_Load(source.encode('utf-8'))
+        elif isinstance(source, bytes):
+            rw = sdl2.SDL_RWFromConstMem(source, len(source))
+            return img.IMG_Load_RW(rw, 1)
         elif callable(source):
-            res = source()
-            if isinstance(res, sdl2.SDL_Surface): surface = res
-            elif hasattr(res, "contents") and isinstance(res.contents, sdl2.SDL_Surface): surface = res
-            elif isinstance(res, (bytes, bytearray)): return self._load_image_source(res)
-        return surface
+            # Dynamic source? Not supported yet in this simple loader
+            return None
+        return None
+
+    def _render_vector_graphics(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
+        """Render vector graphics instructions, utilizing caching."""
+        x, y, w, h = rect
+        print(f"DEBUG_VG: rect={rect}")
+        if w <= 0 or h <= 0: return
+
+        # Check Usage of Cache
+        cache_key = item.get(core.KEY_CACHE_KEY)
+        texture = None
+
+        if cache_key:
+             # Check if we have a texture with this key
+             # BUT we also need to match size?
+             # Uniquely identifying a vector drawing usually includes its size 
+             # because it might be scalable but rendered to a fixed texture.
+             # If the user resizes the window, the primitives resize, so we need new texture.
+             # So specific cache key should be compounded with w/h
+             full_key = f"{cache_key}_{w}_{h}"
+             texture = self._vector_cache.get(full_key)
+
+        if not texture:
+             # Create Texture
+             texture = self._create_vector_texture(item, w, h)
+             if cache_key and texture:
+                 full_key = f"{cache_key}_{w}_{h}"
+                 self._vector_cache[full_key] = texture
+        
+        if texture:
+             self._flush_render_queue()
+             self.renderer.copy(texture, dstrect=(x, y, w, h))
+
+    def _create_vector_texture(self, item: Dict[str, Any], w: int, h: int) -> Union[sdl2.ext.Texture, None]:
+        if w <= 0 or h <= 0: return None
+        
+        # 1. Create Surface
+        surface = sdl2.SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, sdl2.SDL_PIXELFORMAT_RGBA8888)
+        if not surface: return None
+        
+        # 2. Create Software Renderer
+        sw_renderer = sdl2.SDL_CreateSoftwareRenderer(surface)
+        if not sw_renderer:
+            sdl2.SDL_FreeSurface(surface)
+            return None
+        
+        # 3. Setup Drawing
+        sdl2.SDL_SetRenderDrawBlendMode(sw_renderer, sdl2.SDL_BLENDMODE_BLEND)
+        sdl2.SDL_SetRenderDrawColor(sw_renderer, 0, 0, 0, 0)
+        sdl2.SDL_RenderClear(sw_renderer)
+        
+        # 4. Execute Commands using SW Render
+        # We need to pass the sw_renderer to _execute_vector_commands instead of self.renderer.sdlrenderer
+        self._execute_vector_commands(item.get(core.KEY_COMMANDS, []), w, h, renderer_override=sw_renderer)
+        
+        sdl2.SDL_RenderPresent(sw_renderer)
+        
+        # 5. Create Texture from Surface
+        texture = sdl2.SDL_CreateTextureFromSurface(self.renderer.sdlrenderer, surface)
+        
+        # 6. Cleanup
+        sdl2.SDL_DestroyRenderer(sw_renderer)
+        sdl2.SDL_FreeSurface(surface)
+        
+        sdl2.SDL_SetTextureBlendMode(texture, sdl2.SDL_BLENDMODE_BLEND)
+        return RawTexture(self.renderer, texture)
+
+    def _execute_vector_commands(self, commands: List[Dict[str, Any]], w: int, h: int, renderer_override=None):
+        renderer = renderer_override if renderer_override else self.renderer.sdlrenderer
+        
+        # State
+        stroke_color = self._to_sdlgfx_color((255, 255, 255, 255)) # Default white
+        stroke_color_t = (255, 255, 255, 255)
+        fill_color = None
+        fill_color_t = None
+        current_x, current_y = 0, 0
+        stroke_width = 1
+
+        for cmd in commands:
+            ctype = cmd.get(core.CMD_TYPE)
+            
+            if ctype == core.CMD_STROKE:
+                 c = cmd.get("color", (255, 255, 255, 255))
+                 stroke_color_t = c if len(c) == 4 else (*c, 255)
+                 stroke_color = self._to_sdlgfx_color(c)
+                 stroke_width = cmd.get("width", 1)
+                 
+            elif ctype == core.CMD_FILL:
+                 c = cmd.get("color")
+                 if c:
+                     fill_color_t = c if len(c) == 4 else (*c, 255)
+                     fill_color = self._to_sdlgfx_color(c)
+                 else:
+                     fill_color = None
+                     fill_color_t = None
+
+            elif ctype == core.CMD_MOVE_TO:
+                 current_x = cmd.get("x", 0)
+                 current_y = cmd.get("y", 0)
+
+            elif ctype == core.CMD_LINE_TO:
+                 tx = cmd.get("x", 0); ty = cmd.get("y", 0)
+                 if stroke_width == 1:
+                     # Use standard SDL for 1px lines (safer)
+                     sdl2.SDL_SetRenderDrawColor(renderer, *stroke_color_t)
+                     sdl2.SDL_RenderDrawLine(renderer, int(current_x), int(current_y), int(tx), int(ty))
+                 else:
+                     sdlgfx.thickLineColor(renderer, int(current_x), int(current_y), int(tx), int(ty), stroke_width, stroke_color)
+                 current_x, current_y = tx, ty
+
+            elif ctype == core.CMD_RECT:
+                 # TODO: Apply fill and stroke
+                 rx = cmd.get("x", 0); ry = cmd.get("y", 0)
+                 rw = cmd.get("w", 0); rh = cmd.get("h", 0)
+                 rr = cmd.get("r", 0)
+                 
+                 if fill_color is not None:
+                     if rr > 0:
+                         sdlgfx.roundedBoxColor(renderer, rx, ry, rx+rw-1, ry+rh-1, rr, fill_color)
+                     else:
+                         sdlgfx.boxColor(renderer, rx, ry, rx+rw-1, ry+rh-1, fill_color)
+                         
+                 if stroke_width > 0:
+                      # sdlgfx doesn't have thick rects easily, so we might need 4 lines or roundedRectangle
+                      if rr > 0:
+                          sdlgfx.roundedRectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, rr, stroke_color)
+                      else:
+                          sdlgfx.rectangleColor(renderer, rx, ry, rx+rw-1, ry+rh-1, stroke_color)
+
+            elif ctype == core.CMD_CIRCLE:
+                 cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                 if fill_color is not None:
+                      sdlgfx.filledCircleColor(renderer, cx, cy, r, fill_color)
+                 if stroke_width > 0:
+                      sdlgfx.aacircleColor(renderer, cx, cy, r, stroke_color)
+
+            elif ctype == core.CMD_ARC:
+                  cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                  start = cmd.get("start", 0); end = cmd.get("end", 0)
+                  sdlgfx.arcColor(renderer, cx, cy, r, start, end, stroke_color)
+
+            elif ctype == core.CMD_PIE:
+                  cx = cmd.get("x", 0); cy = cmd.get("y", 0); r = cmd.get("r", 0)
+                  start = cmd.get("start", 0); end = cmd.get("end", 0)
+                  if fill_color is not None:
+                      sdlgfx.filledPieColor(renderer, cx, cy, r, start, end, fill_color)
+                  if stroke_width > 0:
+                      sdlgfx.pieColor(renderer, cx, cy, r, start, end, stroke_color)
+            
+            elif ctype == core.CMD_CURVE_TO:
+                  cx1 = cmd.get("cx1"); cy1 = cmd.get("cy1")
+                  cx2 = cmd.get("cx2"); cy2 = cmd.get("cy2")
+                  tx = cmd.get("x"); ty = cmd.get("y")
+                  sdlgfx.bezierColor(renderer, 
+                      (ctypes.c_short * 4)(int(current_x), int(cx1), int(cx2), int(tx)),
+                      (ctypes.c_short * 4)(int(current_y), int(cy1), int(cy2), int(ty)),
+                      4, 100, stroke_color) # what steps? 100?
+                  current_x, current_y = tx, ty
+
 
     def _normalize_box_model(self, val) -> Tuple[int, int, int, int]:
         if isinstance(val, (int, float)): return (int(val), int(val), int(val), int(val))
