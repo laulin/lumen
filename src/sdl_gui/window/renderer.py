@@ -182,6 +182,9 @@ class Renderer:
             self._render_image(item, rect)
         elif item_type == core.TYPE_FLEXBOX:
             self._render_flexbox(item, rect)
+        elif item_type == core.TYPE_VECTOR_GRAPHICS:
+            self._flush_render_queue()
+            self._render_vector_graphics(item, rect)
         self._flush_render_queue()
 
     def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
