@@ -865,17 +865,8 @@ class Renderer:
         sdl2.SDL_SetRenderDrawColor(sw_renderer, 0, 0, 0, 0)
         sdl2.SDL_RenderClear(sw_renderer)
         
-        # 4. Execute Commands using SW Render
-        # We need to pass the sw_renderer to _execute_vector_commands instead of self.renderer.sdlrenderer
-        
-        # Resolve Content Area (Percentages are relative to CONTENT area, not full texture)
+        # 4. Resolve Content Area
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
-        # Ensure padding is properly resolved if it's not a tuple of ints (though BasePrimitive norm should handle)
-        # We can assume it's normalized tuple if coming from primitive, but verify resolving against self?
-        # Renderer logic usually resolves relative units. But padding is usually ints or strings?
-        # BasePrimitive _normalize_spacing handles it.
-        # But if padding uses %, we need to resolve it.
-        # Let's assume for now we resolve it here.
         pt = self._resolve_val(raw_padding[0], h)
         pr = self._resolve_val(raw_padding[1], w)
         pb = self._resolve_val(raw_padding[2], h)
@@ -884,6 +875,7 @@ class Renderer:
         content_w = max(0, w - pl - pr)
         content_h = max(0, h - pt - pb)
         
+        # 5. Execute Commands (using AA primitives internally)
         self._execute_vector_commands(
             item.get(core.KEY_COMMANDS, []), 
             w, h, 
@@ -894,10 +886,10 @@ class Renderer:
         
         sdl2.SDL_RenderPresent(sw_renderer)
         
-        # 5. Create Texture from Surface
+        # 6. Create Texture from Surface
         texture = sdl2.SDL_CreateTextureFromSurface(self.renderer.sdlrenderer, surface)
         
-        # 6. Cleanup
+        # 7. Cleanup
         sdl2.SDL_DestroyRenderer(sw_renderer)
         sdl2.SDL_FreeSurface(surface)
         
@@ -907,7 +899,7 @@ class Renderer:
     def _execute_vector_commands(self, commands: List[Dict[str, Any]], w: int, h: int, 
                                  content_w: int = None, content_h: int = None, 
                                  offset_x: int = 0, offset_y: int = 0,
-                                 renderer_override=None):
+                                 renderer_override=None, scale_factor: int = 1):
         renderer = renderer_override if renderer_override else self.renderer.sdlrenderer
         
         cw = content_w if content_w is not None else w
@@ -925,7 +917,7 @@ class Renderer:
         fill_color = None
         fill_color_t = None
         current_x, current_y = offset_x, offset_y # Start at 0,0 relative to content
-        stroke_width = 1
+        stroke_width = 1 * scale_factor  # Scale stroke width for supersampling
 
         for cmd in commands:
             ctype = cmd.get(core.CMD_TYPE)
@@ -934,7 +926,7 @@ class Renderer:
                  c = cmd.get("color", (255, 255, 255, 255))
                  stroke_color_t = c if len(c) == 4 else (*c, 255)
                  stroke_color = self._to_sdlgfx_color(c)
-                 stroke_width = cmd.get("width", 1)
+                 stroke_width = cmd.get("width", 1) * scale_factor  # Scale for supersampling
                  
             elif ctype == core.CMD_FILL:
                  c = cmd.get("color")
