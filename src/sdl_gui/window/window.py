@@ -70,12 +70,19 @@ class Window:
         """Helper to measure text width, used for input processing."""
         return self.renderer.measure_text_width(text, font, size)
 
-    def render(self, display_list: List[Dict[str, Any]]) -> None:
-        """Render the display list."""
+    def render(self, display_list: List[Dict[str, Any]], force_full: bool = False) -> None:
+        """
+        Render the display list.
+        
+        Args:
+            display_list: The list of display items to render.
+            force_full: If True, force a full render ignoring incremental mode.
+        """
+        # Always do full clear - render_list handles partial clearing internally
         self.renderer.clear()
 
         # Render main content
-        self.renderer.render_list(display_list)
+        self.renderer.render_list(display_list, force_full=force_full)
 
         # Update and Render Debug
         self.debug_system.update()
@@ -105,6 +112,21 @@ class Window:
                     try:
                         color = self.renderer.get_pixel(x, y)
                         res_queue.put(color)
+                    except Exception as e:
+                        res_queue.put(e)
+                elif action_type == "benchmark":
+                    # data is (frames, res_queue)
+                    frames, res_queue = data
+                    try:
+                        result = self._run_benchmark(frames)
+                        res_queue.put(result)
+                    except Exception as e:
+                        res_queue.put(e)
+                elif action_type == "get_perf_stats":
+                    res_queue = data
+                    try:
+                        stats = self.renderer.get_perf_stats()
+                        res_queue.put(stats)
                     except Exception as e:
                         res_queue.put(e)
                 elif action_type == "command":
@@ -325,3 +347,42 @@ class Window:
         elif action == "mouse_move":
              self._process_mouse_motion(data.get("x",0), data.get("y",0), ui_events)
 
+    def _run_benchmark(self, frames: int) -> Dict[str, Any]:
+        """
+        Run a benchmark by rendering the current display list multiple times.
+        
+        Args:
+            frames: Number of frames to render.
+            
+        Returns:
+            Dict with benchmark results.
+        """
+        import time
+        
+        # Enable profiling
+        self.renderer.enable_profiling(True)
+        
+        # Get last display list for repeated rendering
+        display_list = self.renderer.get_last_display_list()
+        
+        # Run frames
+        start_time = time.perf_counter()
+        for _ in range(frames):
+            self.render(display_list)
+        end_time = time.perf_counter()
+        
+        total_time = end_time - start_time
+        
+        # Get perf stats
+        perf_stats = self.renderer.get_perf_stats()
+        
+        # Disable profiling
+        self.renderer.enable_profiling(False)
+        
+        return {
+            "frames": frames,
+            "total_time_ms": total_time * 1000,
+            "avg_frame_ms": (total_time / frames) * 1000 if frames > 0 else 0,
+            "fps": frames / total_time if total_time > 0 else 0,
+            "perf_stats": perf_stats
+        }

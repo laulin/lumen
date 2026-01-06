@@ -66,10 +66,48 @@ class Renderer:
         self._last_display_list: List[Dict[str, Any]] = []
         self._display_list_lock = threading.Lock()
 
-    def clear(self, color=(0, 0, 0, 0)):
+        # Culling statistics for performance monitoring
+        self._culling_stats: Dict[str, int] = {"rendered": 0, "skipped": 0}
+
+        # Dirty rectangles tracking for incremental rendering
+        self._prev_display_list: List[Dict[str, Any]] = []
+        self._dirty_regions: List[Tuple[int, int, int, int]] = []
+        self._dirty_stats: Dict[str, int] = {"full_renders": 0, "partial_renders": 0, "skipped_frames": 0}
+        self._incremental_mode: bool = False  # Disabled by default - opt-in via set_incremental_mode()
+        self._force_full_render: bool = True  # First frame is always full
+
+        # Layout caching: maps (item_hash, parent_rect) → list of (child_rect, child_item)
+        self._layout_cache: Dict[Tuple, List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]]] = {}
+        self._layout_cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
+
+        # Performance profiling
+        self._perf_enabled: bool = False
+        self._perf_stats: Dict[str, float] = {}
+        self._perf_timers: Dict[str, float] = {}
+        self._draw_call_count: int = 0
+        self._batch_stats: Dict[str, int] = {"batched_rects": 0, "saved_calls": 0}
+
+    def clear(self, color=(0, 0, 0, 0), partial: bool = False):
+        """
+        Clear the render target.
+        
+        Args:
+            color: The clear color (R, G, B, A).
+            partial: If True and incremental mode is active, only clear dirty regions.
+        """
         r, g, b, a = color
         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
-        self.renderer.clear()
+        
+        if partial and self._incremental_mode and self._dirty_regions and not self._force_full_render:
+            # Clear only dirty regions
+            for region in self._dirty_regions:
+                rx, ry, rw, rh = region
+                clear_rect = sdl2.SDL_Rect(int(rx), int(ry), int(rw), int(rh))
+                sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, clear_rect)
+        else:
+            # Full clear
+            self.renderer.clear()
+        
         self._hit_list = []
 
     def present(self):
@@ -82,6 +120,276 @@ class Renderer:
         """Return a JSON-serializable copy of the last rendered display list."""
         with self._display_list_lock:
             return self._sanitize_list(self._last_display_list)
+
+    def get_culling_stats(self) -> Dict[str, int]:
+        """
+        Return culling statistics from the last render.
+        
+        Returns:
+            Dict with 'rendered' and 'skipped' counts indicating how many
+            items were actually rendered vs. skipped due to viewport culling.
+        """
+        return self._culling_stats.copy()
+
+    def get_dirty_stats(self) -> Dict[str, int]:
+        """
+        Return dirty rendering statistics.
+        
+        Returns:
+            Dict with 'full_renders', 'partial_renders', and 'skipped_frames' counts.
+        """
+        return self._dirty_stats.copy()
+
+    def set_incremental_mode(self, enabled: bool) -> None:
+        """
+        Enable or disable incremental (dirty rectangles) rendering.
+        
+        Args:
+            enabled: True to enable incremental rendering, False for full renders.
+        """
+        self._incremental_mode = enabled
+        if not enabled:
+            self._force_full_render = True
+
+    def mark_dirty(self, rect: Tuple[int, int, int, int] = None) -> None:
+        """
+        Mark a region as dirty, forcing re-render on next frame.
+        
+        Args:
+            rect: The rectangle to mark dirty (x, y, w, h). 
+                  If None, marks entire window as dirty.
+        """
+        if rect is None:
+            self._force_full_render = True
+        else:
+            self._dirty_regions.append(rect)
+
+    def get_layout_cache_stats(self) -> Dict[str, int]:
+        """
+        Return layout cache statistics.
+        
+        Returns:
+            Dict with 'hits' and 'misses' counts.
+        """
+        return self._layout_cache_stats.copy()
+
+    def enable_profiling(self, enabled: bool) -> None:
+        """
+        Enable or disable performance profiling.
+        
+        When enabled, timing data is collected for various rendering operations.
+        
+        Args:
+            enabled: True to enable profiling, False to disable.
+        """
+        self._perf_enabled = enabled
+        if enabled:
+            self._perf_stats = {}
+            self._draw_call_count = 0
+            self._batch_stats = {"batched_rects": 0, "saved_calls": 0}
+
+    def get_perf_stats(self) -> Dict[str, Any]:
+        """
+        Return performance statistics from profiling.
+        
+        Returns:
+            Dict containing timing data, draw call counts, and batch statistics.
+        """
+        return {
+            "timings": self._perf_stats.copy(),
+            "draw_calls": self._draw_call_count,
+            "batch_stats": self._batch_stats.copy(),
+            "culling_stats": self._culling_stats.copy(),
+            "layout_cache_stats": self._layout_cache_stats.copy(),
+        }
+
+    def _perf_start(self, name: str) -> None:
+        """Start a performance timer."""
+        if self._perf_enabled:
+            import time
+            self._perf_timers[name] = time.perf_counter()
+
+    def _perf_end(self, name: str) -> None:
+        """End a performance timer and accumulate the elapsed time."""
+        if self._perf_enabled and name in self._perf_timers:
+            import time
+            elapsed = time.perf_counter() - self._perf_timers[name]
+            if name in self._perf_stats:
+                self._perf_stats[name] += elapsed
+            else:
+                self._perf_stats[name] = elapsed
+            del self._perf_timers[name]
+
+    def _get_layout_cache_key(self, item: Dict[str, Any], 
+                               parent_rect: Tuple[int, int, int, int]) -> Tuple:
+        """
+        Generate a cache key for layout caching.
+        
+        The key is based on the item's hash (excluding children, which are 
+        handled separately) and the parent rectangle dimensions.
+        
+        Args:
+            item: The container item (VBox/HBox).
+            parent_rect: The parent rectangle (x, y, w, h).
+            
+        Returns:
+            A hashable tuple suitable for use as a cache key.
+        """
+        # Include children hashes in the key since their layout affects results
+        children_hash = tuple(self._hash_item(c) for c in item.get(core.KEY_CHILDREN, []))
+        return (self._hash_item(item), parent_rect, children_hash)
+
+    def _make_hashable(self, value: Any) -> Any:
+        """
+        Recursively convert a value to a hashable representation.
+        
+        Handles nested dicts, lists, and special types like callables.
+        """
+        if isinstance(value, dict):
+            return tuple(sorted((k, self._make_hashable(v)) for k, v in value.items()))
+        elif isinstance(value, list):
+            return tuple(self._make_hashable(v) for v in value)
+        elif isinstance(value, tuple):
+            return tuple(self._make_hashable(v) for v in value)
+        elif callable(value):
+            return id(value)  # Functions by id
+        else:
+            try:
+                hash(value)
+                return value
+            except TypeError:
+                return str(value)  # Fallback for unhashable types
+
+    def _hash_item(self, item: Dict[str, Any]) -> int:
+        """
+        Generate a hash for a display list item for change detection.
+        
+        Excludes children from hash as they are compared separately.
+        """
+        hashable_parts = []
+        for key, value in sorted(item.items()):
+            if key == core.KEY_CHILDREN:
+                continue  # Children are handled separately
+            hashable_parts.append((key, self._make_hashable(value)))
+        return hash(tuple(hashable_parts))
+
+    def _compute_dirty_regions(self, new_list: List[Dict[str, Any]], 
+                                old_list: List[Dict[str, Any]],
+                                parent_rect: Tuple[int, int, int, int]) -> List[Tuple[int, int, int, int]]:
+        """
+        Compare display lists and return list of dirty rectangles.
+        
+        Args:
+            new_list: The new display list.
+            old_list: The previous display list.
+            parent_rect: The parent rectangle for coordinate resolution.
+            
+        Returns:
+            List of (x, y, w, h) tuples representing dirty regions.
+        """
+        dirty = []
+        px, py, pw, ph = parent_rect
+        
+        # Quick check: different lengths = consider entire parent dirty
+        if len(new_list) != len(old_list):
+            return [parent_rect]
+        
+        for new_item, old_item in zip(new_list, old_list):
+            # Get item rects
+            new_rect = new_item.get(core.KEY_RECT, [0, 0, pw, ph])
+            old_rect = old_item.get(core.KEY_RECT, [0, 0, pw, ph])
+            
+            # Resolve coordinates
+            new_x = px + self._resolve_val(new_rect[0], pw)
+            new_y = py + self._resolve_val(new_rect[1], ph)
+            new_w = pw if new_rect[2] == "auto" else self._resolve_val(new_rect[2], pw)
+            new_h = ph if new_rect[3] == "auto" else self._resolve_val(new_rect[3], ph)
+            
+            old_x = px + self._resolve_val(old_rect[0], pw)
+            old_y = py + self._resolve_val(old_rect[1], ph)
+            old_w = pw if old_rect[2] == "auto" else self._resolve_val(old_rect[2], pw)
+            old_h = ph if old_rect[3] == "auto" else self._resolve_val(old_rect[3], ph)
+            
+            new_abs_rect = (new_x, new_y, new_w, new_h)
+            old_abs_rect = (old_x, old_y, old_w, old_h)
+            
+            # Compare item hashes (excluding children)
+            if self._hash_item(new_item) != self._hash_item(old_item):
+                # Item changed - mark both old and new positions as dirty
+                dirty.append(old_abs_rect)
+                if old_abs_rect != new_abs_rect:
+                    dirty.append(new_abs_rect)
+            elif new_abs_rect != old_abs_rect:
+                # Position changed - mark both positions as dirty
+                dirty.append(old_abs_rect)
+                dirty.append(new_abs_rect)
+            
+            # Recursively check children
+            new_children = new_item.get(core.KEY_CHILDREN, [])
+            old_children = old_item.get(core.KEY_CHILDREN, [])
+            if new_children or old_children:
+                child_dirty = self._compute_dirty_regions(new_children, old_children, new_abs_rect)
+                dirty.extend(child_dirty)
+        
+        return dirty
+
+    def _merge_dirty_regions(self, regions: List[Tuple[int, int, int, int]]) -> List[Tuple[int, int, int, int]]:
+        """
+        Merge overlapping dirty regions to reduce clip operations.
+        
+        Returns a list of non-overlapping rectangles covering all dirty areas.
+        """
+        if not regions:
+            return []
+        
+        if len(regions) == 1:
+            return regions
+        
+        # Simple approach: compute bounding box of all regions
+        # More advanced: use R-tree or spatial partitioning
+        min_x = min(r[0] for r in regions)
+        min_y = min(r[1] for r in regions)
+        max_x = max(r[0] + r[2] for r in regions)  
+        max_y = max(r[1] + r[3] for r in regions)
+        
+        # If merged region is much larger than individual regions, keep separate
+        merged_area = (max_x - min_x) * (max_y - min_y)
+        total_individual_area = sum(r[2] * r[3] for r in regions)
+        
+        # If bounding box is less than 2x total area, use bounding box
+        if merged_area <= total_individual_area * 2:
+            return [(min_x, min_y, max_x - min_x, max_y - min_y)]
+        
+        # Otherwise keep separate (simplified - just return unique regions)
+        seen = set()
+        unique = []
+        for r in regions:
+            if r not in seen:
+                seen.add(r)
+                unique.append(r)
+        return unique
+
+    def _is_visible(self, rect: Tuple[int, int, int, int],
+                    viewport: Tuple[int, int, int, int] = None) -> bool:
+        """
+        Check if a rectangle is visible within the viewport.
+        
+        Args:
+            rect: The rectangle to check (x, y, w, h)
+            viewport: The viewport rectangle (vx, vy, vw, vh). If None, always visible.
+            
+        Returns:
+            True if the rectangle intersects with the viewport, False otherwise.
+        """
+        if viewport is None:
+            return True
+        
+        x, y, w, h = rect
+        vx, vy, vw, vh = viewport
+        
+        # Rectangle intersection test: not visible if completely outside
+        return not (x + w <= vx or x >= vx + vw or
+                    y + h <= vy or y >= vy + vh)
 
     def _sanitize_list(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return [self._sanitize_item(item) for item in items]
@@ -147,24 +455,85 @@ class Renderer:
         
         return (r, g, b, a)
 
-    def render_list(self, display_list: List[Dict[str, Any]]) -> None:
+    def render_list(self, display_list: List[Dict[str, Any]], force_full: bool = False) -> None:
+        """
+        Render the display list.
+        
+        Args:
+            display_list: The list of display items to render.
+            force_full: If True, force a full render ignoring incremental mode.
+        """
+        self._perf_start("render_list_total")
+        
         width, height = self.window.size
         self.renderer.logical_size = (width, height)
         root_rect = (0, 0, width, height)
+        root_viewport = root_rect
 
+        # Check for window resize - invalidates all caches
         if (width, height) != self._last_window_size:
              self._measurement_cache = {}
+             self._layout_cache = {}  # Invalidate layout cache on resize
              self._last_window_size = (width, height)
+             self._force_full_render = True  # Window resize = full render
 
-        # Store for debug dump
+        # Reset culling statistics
+        self._culling_stats = {"rendered": 0, "skipped": 0}
+
+        # Determine if we should use incremental mode
+        do_full_render = force_full or self._force_full_render or not self._incremental_mode
+        
+        if not do_full_render:
+            # Compute dirty regions by comparing with previous display list
+            self._dirty_regions = self._compute_dirty_regions(
+                display_list, self._prev_display_list, root_rect
+            )
+            self._dirty_regions = self._merge_dirty_regions(self._dirty_regions)
+            
+            if not self._dirty_regions:
+                # Nothing changed - skip rendering entirely
+                self._dirty_stats["skipped_frames"] += 1
+                self._perf_end("render_list_total")
+                return
+            
+            self._dirty_stats["partial_renders"] += 1
+            
+            # Set clip to bounding box of dirty regions for rendering
+            if len(self._dirty_regions) == 1:
+                dr = self._dirty_regions[0]
+                clip_rect = sdl2.SDL_Rect(int(dr[0]), int(dr[1]), int(dr[2]), int(dr[3]))
+                sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
+                
+                # Clear only dirty region
+                r, g, b, a = 0, 0, 0, 0  # Clear color
+                sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
+                sdl2.SDL_RenderFillRect(self.renderer.sdlrenderer, clip_rect)
+        else:
+            self._dirty_stats["full_renders"] += 1
+            self._dirty_regions = [root_rect]  # Entire window is dirty
+            self._force_full_render = False  # Reset for next frame
+
+        # Reset hit list for this frame
+        self._hit_list = []
+
+        # Store for debug dump and next frame comparison
         with self._display_list_lock:
             self._last_display_list = display_list
+        
+        # Store for next frame dirty detection
+        import copy
+        self._prev_display_list = copy.deepcopy(display_list)
 
+        # Render items (viewport culling will skip items outside dirty regions too)
+        self._perf_start("render_items")
         for item in display_list:
-            self._render_item(item, root_rect)
+            self._render_item(item, root_rect, root_viewport)
+        self._perf_end("render_items")
 
         self._flush_render_queue()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+        
+        self._perf_end("render_list_total")
 
     def render_item_direct(self, item: Dict[str, Any], rect: Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]]) -> None:
         # Cast to int for SDL
@@ -203,6 +572,12 @@ class Renderer:
             ry = self._resolve_val(raw_rect[1], ph)
             current_rect = (px + rx, py + ry, rw, rh)
 
+        # Early culling: skip items that are completely outside the viewport
+        if not self._is_visible(current_rect, viewport):
+            self._culling_stats["skipped"] += 1
+            return
+
+        self._culling_stats["rendered"] += 1
         self._hit_list.append((current_rect, item))
         item_type = item.get(core.KEY_TYPE)
 
@@ -298,46 +673,26 @@ class Renderer:
         return node
 
     def _render_flex_node_children(self, node: FlexNode, item: Dict[str, Any], viewport: Tuple[int, int, int, int] = None):
-        # We need to map node children back to item children.
-        # Since we preserved order, we can iterate.
-        
-        # item['children'] corresponds to node.children
-        # We need to render each child using the computed layout from node.
-        
+        """Render flex node children with viewport culling."""
         for i, child_node in enumerate(node.children):
-            # Retrieve original item
             if hasattr(child_node, 'original_item'):
                  child_item = child_node.original_item
             else:
                  continue
             
-            # Use the computed rect
             cx, cy, cw, ch = child_node.layout_rect
+            child_rect = (int(cx), int(cy), int(cw), int(ch))
             
-            # Check viewport
-            if viewport:
-                 # Simple intersection check
-                 if (cx + cw < viewport[0] or cx > viewport[0] + viewport[2] or
-                     cy + ch < viewport[1] or cy > viewport[1] + viewport[3]):
-                     pass # Skip? No, let's just check standard render viewport logic
-                     # Actually standard render item checks strict intersection?
+            # Viewport culling check
+            if not self._is_visible(child_rect, viewport):
+                self._culling_stats["skipped"] += 1
+                continue
             
-            # Recursive render
+            self._culling_stats["rendered"] += 1
+            
             if child_item.get(core.KEY_TYPE) == core.TYPE_FLEXBOX:
-                 # If child is also flexbox, we shouldn't re-calculate layout?
-                 # Wait, we already calculated the entire tree layout in root!
-                 # So we should render it using the computed positions.
-                 # BUT _render_flexbox calls calculate_layout again on root.
-                 # If we call _render_flexbox recursively, we are re-calculating sub-tree!
-                 # Ideally, we should have a `_render_flex_node_tree` method that does not re-calc.
                  self._render_flex_node_tree_pass(child_node, viewport)
             else:
-                 # Regular item (Text, Image, Rect...)
-                 # We treat it as a leaf?
-                 # But standard primitives expect _render_item to resolve their rect?
-                 # _render_item takes (parent_rect) and resolves offsets.
-                 # HERE we have absolute rect for the child.
-                 # So we should call a method that accepts absolute rect.
                  self.render_item_direct(child_item, (cx, cy, cw, ch))
 
     def _render_flex_node_tree_pass(self, node: FlexNode, viewport: Tuple[int, int, int, int]):
@@ -353,13 +708,24 @@ class Renderer:
 
     def _flush_render_queue(self):
         if not self._render_queue: return
+        
+        self._perf_start("flush_queue")
         count = len(self._render_queue)
+        
+        # Track batching stats
+        if self._perf_enabled:
+            self._batch_stats["batched_rects"] += count
+            self._batch_stats["saved_calls"] += count - 1  # Saved (count-1) calls
+            self._draw_call_count += 1  # One actual draw call for all rects
+        
         rects_array = (sdl2.SDL_Rect * count)(*self._render_queue)
         r, g, b, a = self._render_queue_color
         sdl2.SDL_SetRenderDrawColor(self.renderer.sdlrenderer, r, g, b, a)
         sdl2.SDL_RenderFillRects(self.renderer.sdlrenderer, rects_array, count)
         self._render_queue = []
         self._render_queue_color = None
+        
+        self._perf_end("flush_queue")
 
     def _to_sdlgfx_color(self, color: Tuple[int, int, int, int]) -> int:
         r, g, b, a = color
@@ -441,6 +807,32 @@ class Renderer:
         x, y, w, h = rect
         if item.get(core.KEY_COLOR): self._draw_rect_primitive(item, rect)
 
+        # Check layout cache
+        cache_key = self._get_layout_cache_key(item, rect)
+        cached_layout = self._layout_cache.get(cache_key)
+        
+        if cached_layout is not None:
+            # Cache hit: use cached child positions
+            self._layout_cache_stats["hits"] += 1
+            for c_rect, child in cached_layout:
+                child_top = c_rect[1]
+                child_bottom = child_top + c_rect[3]
+                
+                if viewport and child_top > viewport[1] + viewport[3]:
+                    remaining = len(cached_layout) - cached_layout.index((c_rect, child))
+                    self._culling_stats["skipped"] += remaining
+                    break
+                if viewport and child_bottom < viewport[1]:
+                    self._culling_stats["skipped"] += 1
+                    continue
+                
+                self._culling_stats["rendered"] += 1
+                self._render_element_at(child, c_rect, viewport)
+            return
+
+        # Cache miss: compute layout
+        self._layout_cache_stats["misses"] += 1
+        
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         pt = self._resolve_val(raw_padding[0], h)
         pr = self._resolve_val(raw_padding[1], w)
@@ -451,6 +843,7 @@ class Renderer:
         av_w = w - pr - pl
         av_h = h - pt - pb
 
+        layout_results = []
         for child in item.get(core.KEY_CHILDREN, []):
             raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(raw_margin[0], av_h)
@@ -462,15 +855,56 @@ class Renderer:
             ch = self._measure_item(child, cw, av_h)
 
             c_rect = (x + pl + ml, cursor_y + mt, cw, ch)
+            layout_results.append((c_rect, child))
+            
+            child_top = cursor_y + mt
+            child_bottom = child_top + ch
 
-            if not viewport or (cursor_y + mt + ch >= viewport[1] and cursor_y + mt <= viewport[1] + viewport[3]):
-                self._render_element_at(child, c_rect, viewport)
+            if viewport and child_top > viewport[1] + viewport[3]:
+                remaining = len(item.get(core.KEY_CHILDREN, [])) - item.get(core.KEY_CHILDREN, []).index(child)
+                self._culling_stats["skipped"] += remaining
+                break
+            if viewport and child_bottom < viewport[1]:
+                self._culling_stats["skipped"] += 1
+                cursor_y += mt + ch + mb
+                continue
 
+            self._culling_stats["rendered"] += 1
+            self._render_element_at(child, c_rect, viewport)
             cursor_y += mt + ch + mb
+
+        # Store in cache
+        self._layout_cache[cache_key] = layout_results
 
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
         if item.get(core.KEY_COLOR): self._draw_rect_primitive(item, rect)
+
+        # Check layout cache
+        cache_key = self._get_layout_cache_key(item, rect)
+        cached_layout = self._layout_cache.get(cache_key)
+        
+        if cached_layout is not None:
+            # Cache hit: use cached child positions
+            self._layout_cache_stats["hits"] += 1
+            for c_rect, child in cached_layout:
+                child_left = c_rect[0]
+                child_right = child_left + c_rect[2]
+                
+                if viewport and child_left > viewport[0] + viewport[2]:
+                    remaining = len(cached_layout) - cached_layout.index((c_rect, child))
+                    self._culling_stats["skipped"] += remaining
+                    break
+                if viewport and child_right < viewport[0]:
+                    self._culling_stats["skipped"] += 1
+                    continue
+                
+                self._culling_stats["rendered"] += 1
+                self._render_element_at(child, c_rect, viewport)
+            return
+
+        # Cache miss: compute layout
+        self._layout_cache_stats["misses"] += 1
 
         raw_padding = item.get(core.KEY_PADDING, (0, 0, 0, 0))
         pt = self._resolve_val(raw_padding[0], h)
@@ -482,6 +916,7 @@ class Renderer:
         av_w = w - pr - pl
         av_h = h - pt - pb
 
+        layout_results = []
         for child in item.get(core.KEY_CHILDREN, []):
             raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
             mt = self._resolve_val(raw_margin[0], av_h)
@@ -493,11 +928,26 @@ class Renderer:
             ch = self._measure_item(child, cw, av_h)
 
             c_rect = (cursor_x + ml, y + pt + mt, cw, ch)
+            layout_results.append((c_rect, child))
+            
+            child_left = cursor_x + ml
+            child_right = child_left + cw
 
-            if not viewport or (cursor_x + ml + cw >= viewport[0] and cursor_x + ml <= viewport[0] + viewport[2]):
-                 self._render_element_at(child, c_rect, viewport)
+            if viewport and child_left > viewport[0] + viewport[2]:
+                remaining = len(item.get(core.KEY_CHILDREN, [])) - item.get(core.KEY_CHILDREN, []).index(child)
+                self._culling_stats["skipped"] += remaining
+                break
+            if viewport and child_right < viewport[0]:
+                self._culling_stats["skipped"] += 1
+                cursor_x += ml + cw + mr
+                continue
 
+            self._culling_stats["rendered"] += 1
+            self._render_element_at(child, c_rect, viewport)
             cursor_x += ml + cw + mr
+
+        # Store in cache
+        self._layout_cache[cache_key] = layout_results
 
     def _render_element_at(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         # Same dispatcher as _render_item, but specifically for explicit rects.

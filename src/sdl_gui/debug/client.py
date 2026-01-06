@@ -85,6 +85,29 @@ class DebugClient:
         """Send quit command."""
         return self.send_command("quit")
 
+    def benchmark(self, frames: int = 100) -> Dict[str, Any]:
+        """
+        Run a benchmark for the specified number of frames.
+        
+        Args:
+            frames: Number of frames to render for the benchmark.
+            
+        Returns:
+            Dict containing benchmark results (fps, avg_frame_ms, perf_stats, etc.)
+        """
+        payload = {"type": "benchmark", "frames": frames}
+        return self._send_and_receive(payload)
+
+    def get_perf_stats(self) -> Dict[str, Any]:
+        """
+        Get performance statistics from the renderer.
+        
+        Returns:
+            Dict containing timing data, draw call counts, and batch statistics.
+        """
+        payload = {"type": "get_perf_stats"}
+        return self._send_and_receive(payload)
+
     def _send_and_receive(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Internal method to send JSON and receive JSON response."""
         if not self.sock:

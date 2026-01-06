@@ -142,6 +142,31 @@ class DebugServer:
                 except Exception as e:
                     self._send_response(conn, "error", f"Timeout waiting for pixel data: {e}")
 
+            elif cmd_type == "benchmark":
+                frames = payload.get("frames", 100)
+                res_queue = Queue()
+                self.command_queue.put(("benchmark", (frames, res_queue)))
+                try:
+                    result = res_queue.get(timeout=30.0)
+                    if isinstance(result, Exception):
+                        self._send_response(conn, "error", str(result))
+                    else:
+                        self._send_response(conn, "ok", data=result)
+                except Exception as e:
+                    self._send_response(conn, "error", f"Timeout waiting for benchmark: {e}")
+
+            elif cmd_type == "get_perf_stats":
+                res_queue = Queue()
+                self.command_queue.put(("get_perf_stats", res_queue))
+                try:
+                    result = res_queue.get(timeout=2.0)
+                    if isinstance(result, Exception):
+                        self._send_response(conn, "error", str(result))
+                    else:
+                        self._send_response(conn, "ok", data=result)
+                except Exception as e:
+                    self._send_response(conn, "error", f"Timeout: {e}")
+
             else:
                 self._send_response(conn, "error", "Unknown type")
 

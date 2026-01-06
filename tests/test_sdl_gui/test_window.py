@@ -56,7 +56,7 @@ class TestWindow(unittest.TestCase):
         mock_renderer.present.assert_called()
         
         # Verify render_list called with display_list
-        mock_renderer.render_list.assert_called_with(display_list)
+        mock_renderer.render_list.assert_called_with(display_list, force_full=False)
 
     @patch("sdl_gui.window.window.DebugServer")
     @patch("sdl_gui.window.window.Renderer")
@@ -87,7 +87,7 @@ class TestWindow(unittest.TestCase):
         win.render(display_list)
 
         # Check that render_list was called
-        mock_renderer.render_list.assert_called_with(display_list)
+        mock_renderer.render_list.assert_called_with(display_list, force_full=False)
         # We can't easily inspect ctypes array in mock without more setup.
         # But simply asserting it was called proves dispatch worked.
         pass
@@ -135,7 +135,7 @@ class TestWindow(unittest.TestCase):
         win.render(display_list)
 
         # Verify render_list called
-        mock_renderer.render_list.assert_called_with(display_list)
+        mock_renderer.render_list.assert_called_with(display_list, force_full=False)
 
     @patch("sdl_gui.window.window.DebugServer")
     @patch("sdl_gui.window.window.Renderer")
@@ -190,7 +190,7 @@ class TestWindow(unittest.TestCase):
         win.render(display_list)
 
         # Verify render_list called
-        mock_renderer.render_list.assert_called_with(display_list)
+        mock_renderer.render_list.assert_called_with(display_list, force_full=False)
 
     @patch("sdl_gui.window.window.DebugServer")
     @patch("sdl_gui.window.window.Renderer")
@@ -231,7 +231,7 @@ class TestWindow(unittest.TestCase):
         win.render(display_list)
         
         # Verify render_list called
-        mock_renderer.render_list.assert_called_with(display_list)
+        mock_renderer.render_list.assert_called_with(display_list, force_full=False)
 
         pass
 
