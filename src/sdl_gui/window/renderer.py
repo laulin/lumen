@@ -11,6 +11,7 @@ from sdl_gui import core, markdown
 from sdl_gui.layout_engine.node import FlexNode
 from sdl_gui.layout_engine.style import FlexStyle
 from sdl_gui.layout_engine.definitions import FlexDirection, JustifyContent, AlignItems, FlexWrap
+from sdl_gui.window.spatial_index import SpatialIndex
 
 
 class RawTexture(sdl2.ext.Texture):
@@ -86,6 +87,9 @@ class Renderer:
         self._perf_timers: Dict[str, float] = {}
         self._draw_call_count: int = 0
         self._batch_stats: Dict[str, int] = {"batched_rects": 0, "saved_calls": 0}
+
+        # Spatial index for efficient viewport queries
+        self._spatial_index = SpatialIndex(max_depth=6)
 
     def clear(self, color=(0, 0, 0, 0), partial: bool = False):
         """
@@ -201,7 +205,17 @@ class Renderer:
             "batch_stats": self._batch_stats.copy(),
             "culling_stats": self._culling_stats.copy(),
             "layout_cache_stats": self._layout_cache_stats.copy(),
+            "spatial_index_stats": self._spatial_index.get_stats(),
         }
+
+    def get_spatial_stats(self) -> Dict[str, int]:
+        """
+        Return spatial index statistics.
+        
+        Returns:
+            Dict with insert, remove, query counts and item totals.
+        """
+        return self._spatial_index.get_stats()
 
     def _perf_start(self, name: str) -> None:
         """Start a performance timer."""
@@ -474,6 +488,7 @@ class Renderer:
         if (width, height) != self._last_window_size:
              self._measurement_cache = {}
              self._layout_cache = {}  # Invalidate layout cache on resize
+             self._spatial_index.rebuild(bounds=(0, 0, width * 2, height * 2))
              self._last_window_size = (width, height)
              self._force_full_render = True  # Window resize = full render
 
@@ -524,6 +539,12 @@ class Renderer:
         import copy
         self._prev_display_list = copy.deepcopy(display_list)
 
+        # Clear and rebuild spatial index for this frame
+        self._perf_start("spatial_index_build")
+        self._spatial_index.clear()
+        self._build_spatial_index(display_list, root_rect)
+        self._perf_end("spatial_index_build")
+
         # Render items (viewport culling will skip items outside dirty regions too)
         self._perf_start("render_items")
         for item in display_list:
@@ -534,6 +555,51 @@ class Renderer:
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
         
         self._perf_end("render_list_total")
+
+    def _build_spatial_index(
+        self,
+        items: List[Dict[str, Any]],
+        parent_rect: Tuple[int, int, int, int],
+        prefix: str = ""
+    ) -> None:
+        """
+        Build the spatial index from the display list.
+        
+        Args:
+            items: List of display items.
+            parent_rect: Parent rectangle for coordinate resolution.
+            prefix: Item ID prefix for uniqueness.
+        """
+        px, py, pw, ph = parent_rect
+        
+        for idx, item in enumerate(items):
+            item_id = f"{prefix}{idx}"
+            raw_rect = item.get(core.KEY_RECT)
+            
+            if raw_rect:
+                if raw_rect[2] == "auto":
+                    rw = self._measure_item_width(item, ph)
+                else:
+                    rw = self._resolve_val(raw_rect[2], pw)
+                
+                if raw_rect[3] == "auto":
+                    rh = self._measure_item(item, rw, ph)
+                else:
+                    rh = self._resolve_val(raw_rect[3], ph)
+                
+                rx = self._resolve_val(raw_rect[0], pw)
+                ry = self._resolve_val(raw_rect[1], ph)
+                current_rect = (px + rx, py + ry, rw, rh)
+            else:
+                current_rect = parent_rect
+            
+            # Insert into spatial index
+            self._spatial_index.insert(item_id, current_rect)
+            
+            # Recursively index children
+            children = item.get(core.KEY_CHILDREN, [])
+            if children:
+                self._build_spatial_index(children, current_rect, f"{item_id}_")
 
     def render_item_direct(self, item: Dict[str, Any], rect: Tuple[Union[int, float], Union[int, float], Union[int, float], Union[int, float]]) -> None:
         # Cast to int for SDL

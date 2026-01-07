@@ -167,6 +167,18 @@ class DebugServer:
                 except Exception as e:
                     self._send_response(conn, "error", f"Timeout: {e}")
 
+            elif cmd_type == "get_spatial_stats":
+                res_queue = Queue()
+                self.command_queue.put(("get_spatial_stats", res_queue))
+                try:
+                    result = res_queue.get(timeout=2.0)
+                    if isinstance(result, Exception):
+                        self._send_response(conn, "error", str(result))
+                    else:
+                        self._send_response(conn, "ok", data=result)
+                except Exception as e:
+                    self._send_response(conn, "error", f"Timeout: {e}")
+
             else:
                 self._send_response(conn, "error", "Unknown type")
 

@@ -108,6 +108,16 @@ class DebugClient:
         payload = {"type": "get_perf_stats"}
         return self._send_and_receive(payload)
 
+    def get_spatial_stats(self) -> Dict[str, Any]:
+        """
+        Get spatial index statistics from the renderer.
+        
+        Returns:
+            Dict containing insert, remove, query counts and item totals.
+        """
+        payload = {"type": "get_spatial_stats"}
+        return self._send_and_receive(payload)
+
     def _send_and_receive(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Internal method to send JSON and receive JSON response."""
         if not self.sock:
