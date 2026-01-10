@@ -96,6 +96,15 @@ class Renderer:
         
         # Display list hash for caching (avoids deepcopy and spatial index rebuild)
         self._display_list_hash: int = 0
+        
+        # Flexbox layout cache: (item_hash, w, h) -> FlexNode with calculated layout
+        self._flex_layout_cache: Dict[Tuple, Any] = {}
+        
+        # Markdown parsing cache: (text, default_color) -> parsed segments
+        self._markdown_parse_cache: Dict[Tuple, List] = {}
+        
+        # Rich text height cache: (text, font_path, size, width) -> height
+        self._rich_text_height_cache: Dict[Tuple, int] = {}
 
     def clear(self, color=(0, 0, 0, 0), partial: bool = False):
         """
@@ -686,13 +695,21 @@ class Renderer:
         """Render a FlexBox item by building a FlexNode tree and resolving layout."""
         x, y, w, h = rect
         
-        # 1. Build Flex Tree
-        root_node = self._build_flex_tree(item, w, h)
+        # Check flexbox layout cache
+        flex_cache_key = (self._hash_item(item), w, h, x, y)
+        cached_node = self._flex_layout_cache.get(flex_cache_key)
         
-        # 2. Calculate Layout
-        import logging
-        logging.debug(f"RENDER FLEXBOX: entry={x, y, w, h}")
-        root_node.calculate_layout(w, h, x_offset=x, y_offset=y, force_size=True)
+        if cached_node is not None:
+            root_node = cached_node
+        else:
+            # 1. Build Flex Tree
+            root_node = self._build_flex_tree(item, w, h)
+            
+            # 2. Calculate Layout
+            root_node.calculate_layout(w, h, x_offset=x, y_offset=y, force_size=True)
+            
+            # Cache the result
+            self._flex_layout_cache[flex_cache_key] = root_node
         
         # 3. Render Background (if color/border exists)
         if item.get(core.KEY_COLOR) or item.get(core.KEY_BORDER_COLOR):
@@ -1752,9 +1769,23 @@ class Renderer:
         text = item.get(core.KEY_TEXT, "")
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, parent_height)
+        default_color = item.get(core.KEY_COLOR, (0,0,0,255))
 
-        parser = markdown.MarkdownParser(default_color=item.get(core.KEY_COLOR, (0,0,0,255)))
-        segments = parser.parse(text)
+        # Check height cache first (Optimization 7)
+        height_cache_key = (text, font_path, size, width, default_color)
+        cached_height = self._rich_text_height_cache.get(height_cache_key)
+        if cached_height is not None:
+            return cached_height
+
+        # Check markdown parsing cache (Optimization 6)
+        parse_cache_key = (text, default_color)
+        cached_segments = self._markdown_parse_cache.get(parse_cache_key)
+        if cached_segments is not None:
+            segments = cached_segments
+        else:
+            parser = markdown.MarkdownParser(default_color=default_color)
+            segments = parser.parse(text)
+            self._markdown_parse_cache[parse_cache_key] = segments
 
         def measure_chunk(t, s):
             return self._measure_text_cached(t, font_path, size, s.bold)
@@ -1762,7 +1793,11 @@ class Renderer:
         lines = self._wrap_rich_text(segments, measure_chunk, width, True)
         _, lh = measure_chunk("Tg", segments[0] if segments else None)
         line_height = lh if lh > 0 else size
-        return len(lines) * line_height
+        result = len(lines) * line_height
+        
+        # Cache the result
+        self._rich_text_height_cache[height_cache_key] = result
+        return result
 
     def _measure_image_height(self, item: Dict[str, Any], width: int) -> int:
         source = item.get(core.KEY_SOURCE)
