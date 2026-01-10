@@ -57,6 +57,9 @@ class Renderer:
         self._vector_cache: Dict[str, sdl2.ext.Texture] = {}
         self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
         self._measurement_cache: Dict[Tuple[str, int], int] = {}
+        
+        # Text measurement cache: (font_path, size, text, bold) -> (width, height)
+        self._text_measurement_cache: Dict[Tuple, Tuple[int, int]] = {}
 
         self._render_queue: List[sdl2.SDL_Rect] = []
         self._render_queue_color: Tuple[int, int, int, int] = None
@@ -90,6 +93,9 @@ class Renderer:
 
         # Spatial index for efficient viewport queries
         self._spatial_index = SpatialIndex(max_depth=6)
+        
+        # Display list hash for caching (avoids deepcopy and spatial index rebuild)
+        self._display_list_hash: int = 0
 
     def clear(self, color=(0, 0, 0, 0), partial: bool = False):
         """
@@ -535,14 +541,21 @@ class Renderer:
         with self._display_list_lock:
             self._last_display_list = display_list
         
-        # Store for next frame dirty detection
-        import copy
-        self._prev_display_list = copy.deepcopy(display_list)
+        # Compute display list hash for dirty detection and spatial index caching
+        # Using hash of string representation instead of deepcopy (much faster)
+        current_display_hash = hash(str(display_list))
+        display_list_changed = current_display_hash != self._display_list_hash
+        self._display_list_hash = current_display_hash
+        
+        # Store for next frame dirty detection (incremental mode)
+        # Note: We now use hash for spatial index but still need list for _compute_dirty_regions
+        self._prev_display_list = display_list
 
-        # Clear and rebuild spatial index for this frame
+        # Clear and rebuild spatial index only if display list changed
         self._perf_start("spatial_index_build")
-        self._spatial_index.clear()
-        self._build_spatial_index(display_list, root_rect)
+        if display_list_changed:
+            self._spatial_index.clear()
+            self._build_spatial_index(display_list, root_rect)
         self._perf_end("spatial_index_build")
 
         # Render items (viewport culling will skip items outside dirty regions too)
@@ -1064,6 +1077,40 @@ class Renderer:
                 return None
         return font_manager
 
+    def _measure_text_cached(
+        self, text: str, font_path: str, size: int, bold: bool = False
+    ) -> Tuple[int, int]:
+        """
+        Measure text dimensions with caching.
+        
+        Uses a cache to avoid expensive TTF_RenderUTF8_Blended calls
+        for repeated measurements of the same text.
+        
+        Args:
+            text: The text string to measure.
+            font_path: Path to the font file.
+            size: Font size in pixels.
+            bold: Whether the text is bold.
+            
+        Returns:
+            Tuple of (width, height) in pixels.
+        """
+        cache_key = (font_path, size, text, bold)
+        cached = self._text_measurement_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        
+        # Use a neutral color for measurement - color doesn't affect dimensions
+        fm = self._get_font_manager(font_path, size, (0, 0, 0, 255), bold)
+        if fm:
+            surface = fm.render(text)
+            result = (surface.w, surface.h) if surface else (0, 0)
+        else:
+            result = (0, 0)
+        
+        self._text_measurement_cache[cache_key] = result
+        return result
+
     def _render_text(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         self._flush_render_queue()
         if not self.ttf_available or not item.get(core.KEY_TEXT, ""): return
@@ -1151,9 +1198,7 @@ class Renderer:
         segments = parser.parse(item.get(core.KEY_TEXT, ""))
 
         def measure_chunk(text_str, seg):
-            fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
-            s = fm.render(text_str) if fm else None
-            return (s.w, s.h) if s else (0,0)
+            return self._measure_text_cached(text_str, font_path, size, seg.bold)
 
         lines = self._wrap_rich_text(segments, measure_chunk, rect[2], item.get(core.KEY_WRAP, True))
         _, lh = measure_chunk("Tg", segments[0] if segments else None)
@@ -1338,25 +1383,21 @@ class Renderer:
         x, y, w, h = rect
         if w <= 0 or h <= 0: return
 
-        # Check Usage of Cache
+        # Auto-generate cache key from commands hash if not explicitly provided
         cache_key = item.get(core.KEY_CACHE_KEY)
-        texture = None
-
-        if cache_key:
-             # Check if we have a texture with this key
-             # BUT we also need to match size?
-             # Uniquely identifying a vector drawing usually includes its size 
-             # because it might be scalable but rendered to a fixed texture.
-             # If the user resizes the window, the primitives resize, so we need new texture.
-             # So specific cache key should be compounded with w/h
-             full_key = f"{cache_key}_{w}_{h}"
-             texture = self._vector_cache.get(full_key)
+        if not cache_key:
+            # Generate key from commands content for auto-caching
+            commands = item.get(core.KEY_COMMANDS, [])
+            cache_key = hash(str(commands))
+        
+        # Include size in cache key since vector graphics are rendered at specific sizes
+        full_key = f"vg_{cache_key}_{w}_{h}"
+        texture = self._vector_cache.get(full_key)
 
         if not texture:
              # Create Texture
              texture = self._create_vector_texture(item, w, h)
-             if cache_key and texture:
-                 full_key = f"{cache_key}_{w}_{h}"
+             if texture:
                  self._vector_cache[full_key] = texture
         
         if texture:
@@ -1696,13 +1737,12 @@ class Renderer:
              segments = parser.parse(text)
              total_w = 0
              for seg in segments:
-                 fm = self._get_font_manager(font_path, size, seg.color, seg.bold)
-                 if fm: s = fm.render(seg.text); total_w += s.w if s else 0
+                 w, _ = self._measure_text_cached(seg.text, font_path, size, seg.bold)
+                 total_w += w
              return total_w
         else:
-             fm = self._get_font_manager(font_path, size, color)
-             if fm: s = fm.render(text); return s.w if s else 0
-        return 0
+             w, _ = self._measure_text_cached(text, font_path, size, False)
+             return w
 
     def _measure_text_height(self, item: Dict[str, Any], width: int, parent_height: int = 0) -> int:
         if item.get(core.KEY_MARKUP, True): return self._measure_rich_text_height(item, width, parent_height)
@@ -1717,9 +1757,7 @@ class Renderer:
         segments = parser.parse(text)
 
         def measure_chunk(t, s):
-            fm = self._get_font_manager(font_path, size, s.color, s.bold)
-            s = fm.render(t) if fm else None
-            return (s.w, s.h) if s else (0,0)
+            return self._measure_text_cached(t, font_path, size, s.bold)
 
         lines = self._wrap_rich_text(segments, measure_chunk, width, True)
         _, lh = measure_chunk("Tg", segments[0] if segments else None)
