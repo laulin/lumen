@@ -15,10 +15,11 @@ from sdl_gui.primitives.responsive_text import ResponsiveText
 def main():
     # Implicit parenting showcase
     with Window("Fake Wikipedia", 800, 600, debug=True) as window:
-        
+
         # Main Layout Layer
         with Layer(0, 0, "100%", "100%") as main_layer:
-            
+            Rectangle(0, 0, "100%", "100%", color=(255, 255, 255, 255)) #background color
+
             # Header
             with HBox(0, 0, "100%", 60, padding=10) as header:
                 header.set_color(240, 240, 240, 255) # Light gray background
