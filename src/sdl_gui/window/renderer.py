@@ -107,6 +107,21 @@ class Renderer:
         
         # Rich text height cache: (text, font_path, size, width) -> height
         self._rich_text_height_cache: Dict[Tuple, int] = {}
+        
+        # === PERFORMANCE OPTIMIZATIONS ===
+        
+        # Opt 1: Transient keys to exclude from structural hash (scroll position changes)
+        self._transient_keys = {core.KEY_SCROLL_Y, "scroll_x"}
+        
+        # Opt 2: Item hash cache by ID to avoid recalculating hashes
+        self._item_hash_cache: Dict[str, int] = {}
+        
+        # Opt 3: SDL_Rect pool to reduce allocations during rendering
+        self._rect_pool: List[sdl2.SDL_Rect] = [sdl2.SDL_Rect() for _ in range(256)]
+        self._rect_pool_idx: int = 0
+        
+        # Opt 4: Rich text batch rendering state
+        self._rich_text_batch: List[Tuple] = []
 
     def clear(self, color=(0, 0, 0, 0), partial: bool = False):
         """
@@ -267,8 +282,9 @@ class Renderer:
             A hashable tuple suitable for use as a cache key.
         """
         # Include children hashes in the key since their layout affects results
-        children_hash = tuple(self._hash_item(c) for c in item.get(core.KEY_CHILDREN, []))
-        return (self._hash_item(item), parent_rect, children_hash)
+        # Use cached version to avoid recalculating hashes for items with IDs
+        children_hash = tuple(self._hash_item_cached(c) for c in item.get(core.KEY_CHILDREN, []))
+        return (self._hash_item_cached(item), parent_rect, children_hash)
 
     def _make_hashable(self, value: Any) -> Any:
         """
@@ -303,6 +319,84 @@ class Renderer:
                 continue  # Children are handled separately
             hashable_parts.append((key, self._make_hashable(value)))
         return hash(tuple(hashable_parts))
+
+    def _compute_structural_hash(self, display_list: List[Dict[str, Any]]) -> int:
+        """
+        Compute a fast structural hash for the display list.
+        
+        This hash only considers the STRUCTURE of the display list (item count,
+        IDs, types, and rect dimensions) - not the content. The spatial index
+        only needs to be rebuilt when items are added, removed, or repositioned,
+        not when their content (text, color, scroll position) changes.
+        
+        Returns:
+            An integer hash of the structural layout.
+        """
+        def hash_structure(items: List[Dict[str, Any]]) -> Tuple:
+            result = []
+            for item in items:
+                # Only include structural properties that affect spatial layout
+                item_id = item.get(core.KEY_ID, "")
+                item_type = item.get(core.KEY_TYPE, "")
+                rect = item.get(core.KEY_RECT)
+                rect_key = tuple(rect) if rect else None
+                
+                # Recursively hash children structure
+                children = item.get(core.KEY_CHILDREN, [])
+                children_hash = hash_structure(children) if children else ()
+                
+                result.append((item_id, item_type, rect_key, children_hash))
+            return tuple(result)
+        
+        return hash(hash_structure(display_list))
+
+    def _hash_item_cached(self, item: Dict[str, Any]) -> int:
+        """
+        Generate a hash for an item, using cache if item has an ID.
+        
+        This avoids recalculating hashes for items that haven't changed.
+        The cache is invalidated on window resize.
+        
+        Args:
+            item: The display list item.
+            
+        Returns:
+            The hash of the item.
+        """
+        item_id = item.get(core.KEY_ID)
+        if item_id and item_id in self._item_hash_cache:
+            return self._item_hash_cache[item_id]
+        
+        # Calculate hash
+        result = self._hash_item(item)
+        
+        # Cache if item has an ID
+        if item_id:
+            self._item_hash_cache[item_id] = result
+        
+        return result
+
+    def _get_pooled_rect(self, x: int, y: int, w: int, h: int) -> sdl2.SDL_Rect:
+        """
+        Get a pooled SDL_Rect to reduce allocations.
+        
+        Uses a circular buffer of pre-allocated rectangles.
+        
+        Args:
+            x, y, w, h: Rectangle coordinates.
+            
+        Returns:
+            An SDL_Rect with the given values.
+        """
+        rect = self._rect_pool[self._rect_pool_idx % len(self._rect_pool)]
+        rect.x, rect.y, rect.w, rect.h = int(x), int(y), int(w), int(h)
+        self._rect_pool_idx += 1
+        return rect
+
+    def _invalidate_hash_cache(self) -> None:
+        """Invalidate the item hash cache (called on window resize)."""
+        self._item_hash_cache.clear()
+
 
     def _compute_dirty_regions(self, new_list: List[Dict[str, Any]], 
                                 old_list: List[Dict[str, Any]],
@@ -344,8 +438,8 @@ class Renderer:
             new_abs_rect = (new_x, new_y, new_w, new_h)
             old_abs_rect = (old_x, old_y, old_w, old_h)
             
-            # Compare item hashes (excluding children)
-            if self._hash_item(new_item) != self._hash_item(old_item):
+            # Compare item hashes (excluding children) - using cached version
+            if self._hash_item_cached(new_item) != self._hash_item_cached(old_item):
                 # Item changed - mark both old and new positions as dirty
                 dirty.append(old_abs_rect)
                 if old_abs_rect != new_abs_rect:
@@ -505,6 +599,7 @@ class Renderer:
         if (width, height) != self._last_window_size:
              self._measurement_cache = {}
              self._layout_cache = {}  # Invalidate layout cache on resize
+             self._invalidate_hash_cache()  # Opt 2: Invalidate item hash cache
              self._spatial_index.rebuild(bounds=(0, 0, width * 2, height * 2))
              self._last_window_size = (width, height)
              self._force_full_render = True  # Window resize = full render
@@ -552,14 +647,13 @@ class Renderer:
         with self._display_list_lock:
             self._last_display_list = display_list
         
-        # Compute display list hash for dirty detection and spatial index caching
-        # Using hash of string representation instead of deepcopy (much faster)
-        current_display_hash = hash(str(display_list))
+        # Compute STRUCTURAL hash for spatial index caching
+        # Opt 1: Excludes transient properties like scroll_y to avoid unnecessary rebuilds
+        current_display_hash = self._compute_structural_hash(display_list)
         display_list_changed = current_display_hash != self._display_list_hash
         self._display_list_hash = current_display_hash
         
         # Store for next frame dirty detection (incremental mode)
-        # Note: We now use hash for spatial index but still need list for _compute_dirty_regions
         self._prev_display_list = display_list
 
         # Clear and rebuild spatial index only if display list changed
@@ -847,11 +941,11 @@ class Renderer:
              if color[3] == 0:
                  pass
              elif self._render_queue_color == color:
-                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
+                 self._render_queue.append(self._get_pooled_rect(x, y, w, h))
              else:
                  self._flush_render_queue()
                  self._render_queue_color = color
-                 self._render_queue.append(sdl2.SDL_Rect(x, y, w, h))
+                 self._render_queue.append(self._get_pooled_rect(x, y, w, h))
 
         self._draw_border(item, rect, radius)
 
@@ -1248,14 +1342,18 @@ class Renderer:
         for line in lines:
             if cy > max_y: break
             cache_key = (settings["font_path"], settings["size"], tuple(settings["color"]), line)
-            texture = self._text_texture_cache.get(cache_key)
-            if not texture:
+            cached = self._text_texture_cache.get(cache_key)
+            
+            # Cache stores (texture, size) tuple
+            if cached:
+                texture, (tw, th) = cached
+            else:
                 s = settings["fm"].render(line)
                 if not s: continue
                 texture = sdl2.ext.Texture(self.renderer, s)
-                self._text_texture_cache[cache_key] = texture
+                tw, th = texture.size
+                self._text_texture_cache[cache_key] = (texture, (tw, th))
 
-            tw, th = texture.size
             tx = rect[0]
             if settings["align"] == "center": tx += (rect[2] - tw) // 2
             elif settings["align"] == "right": tx += rect[2] - tw
@@ -1348,16 +1446,24 @@ class Renderer:
 
     def _draw_rich_chunk(self, txt, seg, x, y, w, h, settings):
         cache_key = (settings["font_path"], settings["size"], tuple(seg.color), txt, seg.bold)
-        texture = self._text_texture_cache.get(cache_key)
-        if not texture:
+        cached = self._text_texture_cache.get(cache_key)
+        
+        # Cache stores (texture, size) tuple to avoid repeated property access
+        if cached:
+            texture, tex_size = cached
+        else:
+            texture = None
+            tex_size = None
             fm = self._get_font_manager(settings["font_path"], settings["size"], seg.color, seg.bold)
             if fm:
                 surf = fm.render(txt)
                 if surf:
                     texture = sdl2.ext.Texture(self.renderer, surf)
-                    self._text_texture_cache[cache_key] = texture
+                    tex_size = texture.size  # Cache size at creation time
+                    self._text_texture_cache[cache_key] = (texture, tex_size)
+        
         if texture:
-            self.renderer.copy(texture, dstrect=(x, y, *texture.size))
+            self.renderer.copy(texture, dstrect=(x, y, *tex_size))
 
     def _render_image(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         source = item.get(core.KEY_SOURCE)
