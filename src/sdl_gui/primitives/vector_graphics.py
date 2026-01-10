@@ -19,6 +19,7 @@ class VectorGraphics(BasePrimitive):
         super().__init__(x, y, width, height, padding, margin, id, listen_events)
         self.commands: List[Dict[str, Any]] = []
         self._custom_cache_key = cache_key
+        self._content_version = 0
         
     def set_cache_key(self, key: str):
         """Set a custom cache key. If set, renderer uses this to cache the texture."""
@@ -29,14 +30,17 @@ class VectorGraphics(BasePrimitive):
         """Clear all drawing commands."""
         self.commands = []
         self.commands.append({core.CMD_TYPE: core.CMD_CLEAR})
+        self._content_version += 1
         return self
 
     def move_to(self, x: Union[int, str], y: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_MOVE_TO, "x": x, "y": y})
+        self._content_version += 1
         return self
 
     def line_to(self, x: Union[int, str], y: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_LINE_TO, "x": x, "y": y})
+        self._content_version += 1
         return self
 
     def curve_to(self, cx1: Union[int, str], cy1: Union[int, str], cx2: Union[int, str], cy2: Union[int, str], x: Union[int, str], y: Union[int, str]):
@@ -47,6 +51,7 @@ class VectorGraphics(BasePrimitive):
             "cx2": cx2, "cy2": cy2, 
             "x": x, "y": y
         })
+        self._content_version += 1
         return self
 
     def arc(self, x: Union[int, str], y: Union[int, str], r: Union[int, str], start: int, end: int):
@@ -55,10 +60,12 @@ class VectorGraphics(BasePrimitive):
             "x": x, "y": y, "r": r,
             "start": start, "end": end
         })
+        self._content_version += 1
         return self
         
     def circle(self, x: Union[int, str], y: Union[int, str], r: Union[int, str]):
         self.commands.append({core.CMD_TYPE: core.CMD_CIRCLE, "x": x, "y": y, "r": r})
+        self._content_version += 1
         return self
 
     def pie(self, x: Union[int, str], y: Union[int, str], r: Union[int, str], start: int, end: int):
@@ -67,6 +74,7 @@ class VectorGraphics(BasePrimitive):
             "x": x, "y": y, "r": r,
             "start": start, "end": end
         })
+        self._content_version += 1
         return self
 
     def rect(self, x: Union[int, str], y: Union[int, str], w: Union[int, str], h: Union[int, str], r: Union[int, str] = 0):
@@ -74,6 +82,7 @@ class VectorGraphics(BasePrimitive):
             core.CMD_TYPE: core.CMD_RECT,
             "x": x, "y": y, "w": w, "h": h, "r": r
         })
+        self._content_version += 1
         return self
 
     def stroke(self, color: Tuple[int, int, int, int], width: int = 1):
@@ -85,6 +94,7 @@ class VectorGraphics(BasePrimitive):
             "color": color,
             "width": width
         })
+        self._content_version += 1
         return self
 
     def fill(self, color: Tuple[int, int, int, int]):
@@ -94,17 +104,19 @@ class VectorGraphics(BasePrimitive):
             core.CMD_TYPE: core.CMD_FILL,
             "color": color
         })
+        self._content_version += 1
         return self
 
     def to_data(self) -> Dict[str, Any]:
         data = super().to_data()
         data[core.KEY_TYPE] = core.TYPE_VECTOR_GRAPHICS
         data[core.KEY_COMMANDS] = self.commands
-        # If user didn't provide a key, we might generate one or leave it None (no caching)
-        # For performance, auto-generation based on commands hash is expensive. 
-        # Better to rely on user or object ID if content is static?
-        # If content changes, ID is same but content diff. 
-        # So explicit key is safer.
+        
+        # Use custom key if provided, otherwise generate one based on ID and version
         if self._custom_cache_key:
-            data[core.KEY_CACHE_KEY] = self._custom_cache_key
+             data[core.KEY_CACHE_KEY] = self._custom_cache_key
+        elif self.id:
+             # Fast cache key generation for static/updates
+             data[core.KEY_CACHE_KEY] = f"{self.id}_v{self._content_version}"
+             
         return data

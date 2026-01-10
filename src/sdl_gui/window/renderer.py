@@ -56,6 +56,8 @@ class Renderer:
         self._image_cache: Dict[str, sdl2.ext.Texture] = {}
         self._vector_cache: Dict[str, sdl2.ext.Texture] = {}
         self._text_texture_cache: Dict[Tuple, sdl2.ext.Texture] = {}
+        self._rich_text_layout_cache: Dict[Tuple, Tuple[List, Dict]] = {}
+        self._rounded_box_cache: Dict[str, sdl2.ext.Texture] = {}
         self._measurement_cache: Dict[Tuple[str, int], int] = {}
         
         # Text measurement cache: (font_path, size, text, bold) -> (width, height)
@@ -881,6 +883,22 @@ class Renderer:
 
     def _draw_aa_rounded_box(self, rect: Tuple[int, int, int, int], radius: int, color: Tuple[int, int, int, int]) -> None:
         x, y, w, h = rect
+        if w <= 0 or h <= 0: return
+
+        # Try to use cached texture for rounded box
+        cache_key = f"rbox_{w}_{h}_{radius}_{color}"
+        texture = self._rounded_box_cache.get(cache_key)
+        
+        if not texture:
+             texture = self._create_rounded_box_texture(w, h, radius, color)
+             if texture:
+                 self._rounded_box_cache[cache_key] = texture
+        
+        if texture:
+             self.renderer.copy(texture, dstrect=(x, y, w, h))
+             return
+
+        # Fallback to direct drawing (slow)
         gfx_color = self._to_sdlgfx_color(color)
 
         sdlgfx.roundedBoxColor(self.renderer.sdlrenderer, x, y, x + w - 1, y + h - 1, radius, gfx_color)
@@ -898,6 +916,48 @@ class Renderer:
         set_clip(x + w - radius, y + h - radius, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + w - 1 - radius, y + h - 1 - radius, radius, gfx_color)
         set_clip(x, y + h - radius, radius, radius); sdlgfx.aacircleColor(self.renderer.sdlrenderer, x + radius, y + h - 1 - radius, radius, gfx_color)
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, None)
+
+    def _create_rounded_box_texture(self, w: int, h: int, radius: int, color: Tuple[int, int, int, int]) -> Union[sdl2.ext.Texture, None]:
+        sdl_renderer = self.renderer.sdlrenderer
+        
+        # Create target texture
+        target = sdl2.SDL_CreateTexture(sdl_renderer, sdl2.SDL_PIXELFORMAT_RGBA8888, 
+                                        sdl2.SDL_TEXTUREACCESS_TARGET, w, h)
+        if not target: return None
+        
+        sdl2.SDL_SetTextureBlendMode(target, sdl2.SDL_BLENDMODE_BLEND)
+        
+        old_target = sdl2.SDL_GetRenderTarget(sdl_renderer)
+        sdl2.SDL_SetRenderTarget(sdl_renderer, target)
+        
+        sdl2.SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0)
+        sdl2.SDL_RenderClear(sdl_renderer)
+        
+        # Draw the rounded box using the same code but to texture
+        # Recursive call to _draw_aa_rounded_box? No, infinite recursion.
+        # Use direct drawing logic here.
+        gfx_color = self._to_sdlgfx_color(color)
+
+        sdlgfx.roundedBoxColor(sdl_renderer, 0, 0, w - 1, h - 1, radius, gfx_color)
+        # Add AA borders manually as in original code
+        sdlgfx.aalineColor(sdl_renderer, radius, 0, w - 1 - radius, 0, gfx_color)
+        sdlgfx.aalineColor(sdl_renderer, radius, h - 1, w - 1 - radius, h - 1, gfx_color)
+        sdlgfx.aalineColor(sdl_renderer, 0, radius, 0, h - 1 - radius, gfx_color)
+        sdlgfx.aalineColor(sdl_renderer, w - 1, radius, w - 1, h - 1 - radius, gfx_color)
+
+        def set_clip(cx, cy, cw, ch):
+             clip = sdl2.SDL_Rect(cx, cy, cw, ch)
+             sdl2.SDL_RenderSetClipRect(sdl_renderer, ctypes.byref(clip))
+
+        set_clip(0, 0, radius, radius); sdlgfx.aacircleColor(sdl_renderer, radius, radius, radius, gfx_color)
+        set_clip(w - radius, 0, radius, radius); sdlgfx.aacircleColor(sdl_renderer, w - 1 - radius, radius, radius, gfx_color)
+        set_clip(w - radius, h - radius, radius, radius); sdlgfx.aacircleColor(sdl_renderer, w - 1 - radius, h - 1 - radius, radius, gfx_color)
+        set_clip(0, h - radius, radius, radius); sdlgfx.aacircleColor(sdl_renderer, radius, h - 1 - radius, radius, gfx_color)
+        sdl2.SDL_RenderSetClipRect(sdl_renderer, None)
+
+        sdl2.SDL_SetRenderTarget(sdl_renderer, old_target)
+        return RawTexture(self.renderer, target)
+
 
     def _render_vbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
@@ -1210,9 +1270,16 @@ class Renderer:
         font_path = item.get(core.KEY_FONT) or "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         size = self._get_resolved_font_size(item, rect[3])
         base_color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
+        text_content = item.get(core.KEY_TEXT, "")
+        
+        # Check cache
+        cache_key = (text_content, rect[2], font_path, size, base_color)
+        cached = self._rich_text_layout_cache.get(cache_key)
+        if cached:
+            return cached
 
         parser = markdown.MarkdownParser(default_color=base_color)
-        segments = parser.parse(item.get(core.KEY_TEXT, ""))
+        segments = parser.parse(text_content)
 
         def measure_chunk(text_str, seg):
             return self._measure_text_cached(text_str, font_path, size, seg.bold)
@@ -1222,6 +1289,7 @@ class Renderer:
         line_height = lh if lh > 0 else size
 
         settings = {"font_path": font_path, "size": size, "line_h": line_height}
+        self._rich_text_layout_cache[cache_key] = (lines, settings)
         return lines, settings
 
     def _get_resolved_font_size(self, item, parent_h):
