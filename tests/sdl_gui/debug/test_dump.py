@@ -12,7 +12,7 @@ from sdl_gui.window.window import Window
 class TestDebugDump(unittest.TestCase):
 
     @patch("sdl_gui.window.renderer.sdl2.ext")
-    @patch("sdl_gui.window.renderer.sdlttf")
+    @patch("sdl_gui.rendering.text_renderer.sdlttf")
     def test_renderer_sanitization(self, mock_ttf, mock_rend_ext):
         """Test that Renderer correctly sanitizes display list for JSON serialization."""
         mock_window = MagicMock()

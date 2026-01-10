@@ -8,7 +8,7 @@ class TestWindowResize(unittest.TestCase):
     @patch("sdl_gui.window.window.DebugServer")
     @patch("sdl_gui.window.renderer.sdl2.ext")
     @patch("sdl_gui.window.renderer.sdl2")
-    @patch("sdl_gui.window.renderer.sdlttf")
+    @patch("sdl_gui.rendering.text_renderer.sdlttf")
     @patch("sdl_gui.window.window.sdl2.SDL_RenderFillRects")
     @patch("sdl_gui.window.window.sdl2.ext")
     @patch("sdl_gui.window.window.sdl2")

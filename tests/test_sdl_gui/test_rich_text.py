@@ -7,10 +7,11 @@ from sdl_gui.window.window import Window
 
 class TestWindowRichText(unittest.TestCase):
     @patch("sdl_gui.window.window.DebugServer")
-    @patch("sdl_gui.window.renderer.sdlttf.TTF_Init")
+    @patch("sdl_gui.rendering.text_renderer.sdlttf.TTF_Init")
     @patch("sdl_gui.window.window.sdl2")
+    @patch("sdl_gui.rendering.text_renderer.sdl2")
     @patch("sdl_gui.window.renderer.sdl2")
-    def test_render_rich_text_link_markdown(self, mock_rend_sdl2, mock_win_sdl2, mock_ttf, mock_debug):
+    def test_render_rich_text_link_markdown(self, mock_rend_sdl2, mock_text_sdl2, mock_win_sdl2, mock_ttf, mock_debug):
         mock_renderer_cls = mock_rend_sdl2.ext.Renderer
         mock_renderer = mock_renderer_cls.return_value
         
@@ -20,6 +21,12 @@ class TestWindowRichText(unittest.TestCase):
         # FontManager is in sdl_gui.window.renderer usually or imported?
         # It's referenced via sdl2.ext.FontManager usually.
         mock_rend_sdl2.ext.FontManager.return_value = mock_fm
+        
+        # Ensure TextRenderer sees the same mocks
+        mock_text_sdl2.ext.Renderer = mock_rend_sdl2.ext.Renderer
+        mock_text_sdl2.ext.Texture = mock_rend_sdl2.ext.Texture
+        mock_text_sdl2.ext.FontManager = mock_rend_sdl2.ext.FontManager
+
 
         mock_window = MagicMock()
         mock_window.size = (100, 100)

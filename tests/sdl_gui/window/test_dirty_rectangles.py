@@ -23,7 +23,7 @@ class TestDirtyRectangles(unittest.TestCase):
         self.mock_sdl_renderer = MagicMock()
         
         with patch('sdl_gui.window.renderer.sdl2.ext.Renderer') as mock_renderer_class:
-            with patch('sdl_gui.window.renderer.sdlttf.TTF_Init'):
+            with patch('sdl_gui.rendering.text_renderer.sdlttf.TTF_Init'):
                 mock_renderer_instance = MagicMock()
                 mock_renderer_instance.sdlrenderer = self.mock_sdl_renderer
                 mock_renderer_class.return_value = mock_renderer_instance
@@ -230,7 +230,7 @@ class TestDirtyRectanglesIntegration(unittest.TestCase):
         self.mock_sdl_renderer = MagicMock()
         
         with patch('sdl_gui.window.renderer.sdl2.ext.Renderer') as mock_renderer_class:
-            with patch('sdl_gui.window.renderer.sdlttf.TTF_Init'):
+            with patch('sdl_gui.rendering.text_renderer.sdlttf.TTF_Init'):
                 mock_renderer_instance = MagicMock()
                 mock_renderer_instance.sdlrenderer = self.mock_sdl_renderer
                 mock_renderer_class.return_value = mock_renderer_instance

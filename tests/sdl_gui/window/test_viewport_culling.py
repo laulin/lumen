@@ -25,7 +25,7 @@ class TestViewportCulling(unittest.TestCase):
         
         # Patch SDL2 initialization
         with patch('sdl_gui.window.renderer.sdl2.ext.Renderer'):
-            with patch('sdl_gui.window.renderer.sdlttf.TTF_Init'):
+            with patch('sdl_gui.rendering.text_renderer.sdlttf.TTF_Init'):
                 self.renderer = Renderer(self.mock_window)
 
     def test_is_visible_fully_inside(self):
@@ -138,7 +138,7 @@ class TestViewportCullingIntegration(unittest.TestCase):
         self.mock_window.size = (800, 600)
         
         with patch('sdl_gui.window.renderer.sdl2.ext.Renderer'):
-            with patch('sdl_gui.window.renderer.sdlttf.TTF_Init'):
+            with patch('sdl_gui.rendering.text_renderer.sdlttf.TTF_Init'):
                 self.renderer = Renderer(self.mock_window)
 
     def test_render_item_skips_invisible(self):
