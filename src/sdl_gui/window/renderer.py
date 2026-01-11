@@ -373,7 +373,13 @@ class Renderer:
             self._spatial_index.insert(item_id, current_rect)
             children = item.get(core.KEY_CHILDREN, [])
             if children:
-                self._build_spatial_index(children, current_rect, f"{item_id}_")
+                # For auto-height containers, use parent's height for children to avoid inflation
+                typ = item.get(core.KEY_TYPE)
+                if typ in (core.TYPE_VBOX, core.TYPE_HBOX) and raw_rect and raw_rect[3] == "auto":
+                    child_rect = (current_rect[0], current_rect[1], current_rect[2], ph)
+                else:
+                    child_rect = current_rect
+                self._build_spatial_index(children, child_rect, f"{item_id}_")
 
     def render_item_direct(self, item: Dict[str, Any], rect: Tuple[int, int, int, int]) -> None:
         x, y, w, h = rect
@@ -452,6 +458,7 @@ class Renderer:
         cursor_y = y + pt
         av_w = w - pr - pl; av_h = h - pt - pb
 
+        # First pass: compute layout for ALL children (for correct cache)
         layout_results = []
         for child in item.get(core.KEY_CHILDREN, []):
             raw_margin = child.get(core.KEY_MARGIN, (0, 0, 0, 0))
@@ -465,16 +472,16 @@ class Renderer:
 
             c_rect = (x + pl + ml, cursor_y + mt, cw, ch)
             layout_results.append((c_rect, child))
-
-            if viewport and (cursor_y + mt > viewport[1] + viewport[3]): break
-            if viewport and (cursor_y + mt + ch < viewport[1]):
-                cursor_y += mt + ch + mb
-                continue
-
-            self._render_element_at(child, c_rect, viewport)
             cursor_y += mt + ch + mb
 
+        # Cache the complete layout
         self._layout_cache[cache_key] = layout_results
+
+        # Second pass: render only visible children
+        for c_rect, child in layout_results:
+            if viewport and c_rect[1] > viewport[1] + viewport[3]: break
+            if viewport and c_rect[1] + c_rect[3] < viewport[1]: continue
+            self._render_element_at(child, c_rect, viewport)
 
     def _render_hbox(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         # Similar simplification
@@ -533,9 +540,11 @@ class Renderer:
     def _render_scrollable_layer(self, item: Dict[str, Any], rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         x, y, w, h = rect
         scroll_y = item.get(core.KEY_SCROLL_Y, 0)
+
         clip_rect = sdl2.SDL_Rect(x, y, w, h)
         self.primitive_renderer.flush()
         sdl2.SDL_RenderSetClipRect(self.renderer.sdlrenderer, clip_rect)
+        # Use viewport height for children layout, scroll_y shifts content up
         virtual_parent_rect = (x, y - scroll_y, w, h)
         current_viewport = (x, y, w, h)
         for child in item.get(core.KEY_CHILDREN, []):
@@ -593,25 +602,38 @@ class Renderer:
         raw_padding = item.get(core.KEY_PADDING, (0,0,0,0))
         pt = self._resolve_val(raw_padding[0], av_h); pb = self._resolve_val(raw_padding[2], av_h)
         h += pt + pb
+        # Compute available height for children: if VBox has fixed height, use it
+        raw_rect = item.get(core.KEY_RECT, [0, 0, 0, 0])
+        if raw_rect[3] != "auto":
+            child_av_h = self._resolve_val(raw_rect[3], av_h) - pt - pb
+        else:
+            child_av_h = av_h
         for child in item.get(core.KEY_CHILDREN, []):
              raw_margin = child.get(core.KEY_MARGIN, (0,0,0,0))
-             mt = self._resolve_val(raw_margin[0], av_h); mb = self._resolve_val(raw_margin[2], av_h)
+             mt = self._resolve_val(raw_margin[0], child_av_h); mb = self._resolve_val(raw_margin[2], child_av_h)
              cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
              cw = self._resolve_val(cw_raw[2], av_w) # VBox children width usually fixed
-             ch = self._measure_item(child, cw, av_h)
+             ch = self._measure_item(child, cw, child_av_h)
              h += mt + ch + mb
         return h
 
     def _measure_hbox_height(self, item: Dict[str, Any], av_w: int, av_h: int) -> int:
-        max_h = 0
+        # Compute available height for children: if HBox has fixed height, use it
+        raw_rect = item.get(core.KEY_RECT, [0, 0, 0, 0])
         raw_padding = item.get(core.KEY_PADDING, (0,0,0,0))
         pt = self._resolve_val(raw_padding[0], av_h); pb = self._resolve_val(raw_padding[2], av_h)
+        if raw_rect[3] != "auto":
+            own_h = self._resolve_val(raw_rect[3], av_h)
+            child_av_h = own_h - pt - pb
+        else:
+            child_av_h = av_h
+        max_h = 0
         for child in item.get(core.KEY_CHILDREN, []):
              raw_margin = child.get(core.KEY_MARGIN, (0,0,0,0))
-             mt = self._resolve_val(raw_margin[0], av_h); mb = self._resolve_val(raw_margin[2], av_h)
+             mt = self._resolve_val(raw_margin[0], child_av_h); mb = self._resolve_val(raw_margin[2], child_av_h)
              cw_raw = child.get(core.KEY_RECT, [0,0,0,0])
-             cw = self._measure_item_width(child, av_h) if cw_raw[2] == "auto" else self._resolve_val(cw_raw[2], av_w)
-             ch = self._measure_item(child, cw, av_h)
+             cw = self._measure_item_width(child, child_av_h) if cw_raw[2] == "auto" else self._resolve_val(cw_raw[2], av_w)
+             ch = self._measure_item(child, cw, child_av_h)
              max_h = max(max_h, mt + ch + mb)
         return max_h + pt + pb
 
