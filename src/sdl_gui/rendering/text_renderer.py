@@ -30,12 +30,14 @@ class TextRenderer:
         self._text_texture_cache: Dict[Tuple, Tuple[sdl2.ext.Texture, Tuple[int, int]]] = {}
         self._text_measurement_cache: Dict[Tuple, Tuple[int, int]] = {}
         self._rich_text_layout_cache: Dict[Tuple, Any] = {}
+        self._plain_text_layout_cache: Dict[Tuple, Any] = {}
 
     def clear_caches(self):
         """Clear all text-related caches."""
         self._text_texture_cache.clear()
         self._text_measurement_cache.clear()
         self._rich_text_layout_cache.clear()
+        self._plain_text_layout_cache.clear()
         # Note: We keep font managers as they are expensive to reload
 
     def render_text(
@@ -45,7 +47,7 @@ class TextRenderer:
         hit_list: List[Tuple[Tuple[int, int, int, int], Dict[str, Any]]]
     ) -> None:
         """Render text item (plain or rich)."""
-        self.primitive_renderer.flush()
+        # Note: flush() is handled by the main renderer for batching efficiency
 
         if not self.ttf_available or not item.get(core.KEY_TEXT, ""):
             return
@@ -114,23 +116,39 @@ class TextRenderer:
         size = self._get_resolved_font_size(item, rect[3])
         color = item.get(core.KEY_COLOR, (0, 0, 0, 255))
         if len(color) == 3: color = (*color, 255)
+        wrap = item.get(core.KEY_WRAP, True)
+        align = item.get(core.KEY_ALIGN, "left")
+        ellipsis = item.get(core.KEY_ELLIPSIS, True)
+
+        # Check cache
+        cache_key = (text, rect[2], rect[3], font_path, size, tuple(color), wrap, ellipsis)
+        cached = self._plain_text_layout_cache.get(cache_key)
+        if cached:
+            # Return cached lines and rebuild settings with fm
+            cached_lines, cached_lh = cached
+            fm = self._get_font_manager(font_path, size, color)
+            settings = {"font_path": font_path, "size": size, "color": color,
+                "align": align, "line_h": cached_lh, "fm": fm}
+            return cached_lines, settings
 
         fm = self._get_font_manager(font_path, size, color)
         if not fm: return [], {}
 
         def measure(s):
-            surf = fm.render(s)
-            return (surf.w if surf else 0, surf.h if surf else 0)
+            return self._measure_text_cached(s, font_path, size)
 
-        lines = [text] if not item.get(core.KEY_WRAP, True) else self._wrap_text(text, measure, rect[2])
+        lines = [text] if not wrap else self._wrap_text(text, measure, rect[2])
         _, lh = measure("Tg")
-        lh = max(lh, size) # Ensure at least size height
+        lh = max(lh, size)  # Ensure at least size height
 
-        if len(lines) * lh > rect[3] and item.get(core.KEY_ELLIPSIS, True):
+        if len(lines) * lh > rect[3] and ellipsis:
             lines = self._apply_ellipsis(lines, measure, rect[2], rect[3], lh)
 
+        # Cache the layout result
+        self._plain_text_layout_cache[cache_key] = (lines, lh)
+
         settings = {"font_path": font_path, "size": size, "color": color,
-            "align": item.get(core.KEY_ALIGN, "left"), "line_h": lh, "fm": fm}
+            "align": align, "line_h": lh, "fm": fm}
         return lines, settings
 
     def _wrap_text(self, text, measure_func, max_width):

@@ -398,8 +398,7 @@ class Renderer:
             self.flex_renderer.render_flexbox(item, rect) # Recursive via callback/proxy
         elif item_type == core.TYPE_VECTOR_GRAPHICS:
             self.vector_renderer.render_vector_graphics(item, rect)
-
-        self.primitive_renderer.flush()
+        # Note: flush() is handled at the end of render_list for batching efficiency
 
     def _render_item(self, item: Dict[str, Any], parent_rect: Tuple[int, int, int, int], viewport: Tuple[int, int, int, int] = None) -> None:
         raw_rect = item.get(core.KEY_RECT)

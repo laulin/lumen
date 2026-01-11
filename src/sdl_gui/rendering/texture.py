@@ -12,9 +12,15 @@ class RawTexture(sdl2.ext.Texture):
     """
     def __init__(self, renderer: Union[sdl2.ext.Renderer, Any], tx: Any):
         # We bypass the standard __init__ since it requires a surface
-
-        self.renderer = renderer
-        self.tx = tx
+        # Use _tx to match the parent class property
+        self._tx = tx
+        
+        # Initialize _renderer_ref to match parent class expectations
+        if isinstance(renderer, sdl2.ext.Renderer):
+            self._renderer_ref = renderer._renderer_ref
+        else:
+            # Fallback: wrap the renderer reference
+            self._renderer_ref = [renderer.sdlrenderer if hasattr(renderer, 'sdlrenderer') else renderer]
 
         # Cache size
         w, h = ctypes.c_int(), ctypes.c_int()
@@ -22,6 +28,6 @@ class RawTexture(sdl2.ext.Texture):
         self._size = (w.value, h.value)
 
     def __del__(self):
-        if self.tx:
-             sdl2.SDL_DestroyTexture(self.tx)
-             self.tx = None
+        if hasattr(self, '_tx') and self._tx:
+            sdl2.SDL_DestroyTexture(self._tx)
+            self._tx = None
