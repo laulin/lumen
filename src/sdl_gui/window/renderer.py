@@ -314,11 +314,10 @@ class Renderer:
         root_rect = (0, 0, width, height)
         root_viewport = root_rect
         
-        # Always invalidate hash cache to detect dynamic content changes
+        # Invalidate hash cache to ensure proper change detection for dynamic content
+        # Note: Layout structure rarely changes, so we keep layout cache intact
+        # VectorRenderer uses cache_key from content version for proper invalidation
         self._invalidate_hash_cache()
-        # Also clear layout cache to ensure fresh item references for dynamic content
-        self._layout_cache.clear()
-        self.flex_renderer.clear_cache()
 
         if (width, height) != self._last_window_size:
              self.clean_caches() # Includes invalidate hash cache

@@ -100,11 +100,17 @@ class FlexRenderer:
 
     def _render_flex_node_children(self, node: FlexNode, item: Dict[str, Any], viewport: Tuple[int, int, int, int] = None):
         """Render flex node children with viewport culling."""
+        # Get fresh children from the current item (not cached)
+        children_items = item.get(core.KEY_CHILDREN, [])
+        
         for i, child_node in enumerate(node.children):
-            if hasattr(child_node, 'original_item'):
-                 child_item = child_node.original_item
+            # Use fresh item from current display list if available
+            if i < len(children_items):
+                child_item = children_items[i]
+            elif hasattr(child_node, 'original_item'):
+                child_item = child_node.original_item
             else:
-                 continue
+                continue
 
             cx, cy, cw, ch = child_node.layout_rect
             child_rect = (int(cx), int(cy), int(cw), int(ch))
@@ -117,14 +123,13 @@ class FlexRenderer:
             self.renderer_proxy._culling_stats["rendered"] += 1
 
             if child_item.get(core.KEY_TYPE) == core.TYPE_FLEXBOX:
-                 self._render_flex_node_tree_pass(child_node, viewport)
+                 self._render_flex_node_tree_pass(child_node, child_item, viewport)
             else:
                  # Call back to main renderer for dispatching leaf items
                  self.renderer_proxy.render_item_direct(child_item, (cx, cy, cw, ch))
 
-    def _render_flex_node_tree_pass(self, node: FlexNode, viewport: Tuple[int, int, int, int]):
+    def _render_flex_node_tree_pass(self, node: FlexNode, item: Dict[str, Any], viewport: Tuple[int, int, int, int]):
          # Render the node itself (background)
-         item = getattr(node, 'original_item', {})
          x, y, w, h = node.layout_rect
          rect = (int(x), int(y), int(w), int(h))
 
