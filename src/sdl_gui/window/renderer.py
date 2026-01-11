@@ -313,6 +313,12 @@ class Renderer:
         self.renderer.logical_size = (width, height)
         root_rect = (0, 0, width, height)
         root_viewport = root_rect
+        
+        # Always invalidate hash cache to detect dynamic content changes
+        self._invalidate_hash_cache()
+        # Also clear layout cache to ensure fresh item references for dynamic content
+        self._layout_cache.clear()
+        self.flex_renderer.clear_cache()
 
         if (width, height) != self._last_window_size:
              self.clean_caches() # Includes invalidate hash cache

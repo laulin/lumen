@@ -116,7 +116,6 @@ class VectorGraphics(BasePrimitive):
         if self._custom_cache_key:
              data[core.KEY_CACHE_KEY] = self._custom_cache_key
         elif self.id:
-             # Fast cache key generation for static/updates
              data[core.KEY_CACHE_KEY] = f"{self.id}_v{self._content_version}"
              
         return data
