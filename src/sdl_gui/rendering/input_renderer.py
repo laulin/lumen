@@ -43,7 +43,7 @@ class InputRenderer:
         x, y, w, h = rect
 
         # --- 1. Background ---
-        bg_color = item.get("background_color", (255, 255, 255, 255))
+        bg_color = item.get("background_color", None)
         
         # Only draw background if we have a valid color (and not None)
         if bg_color:

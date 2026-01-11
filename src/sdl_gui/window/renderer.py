@@ -78,6 +78,15 @@ class Renderer:
         self.flex_renderer.clear_cache()
         self._spatial_index.clear()
 
+    def destroy(self) -> None:
+        """Release SDL renderer resources. Call before SDL quit."""
+        # Clear caches that may hold SDL resources (textures)
+        self.clean_caches()
+        # Destroy SDL renderer if it exists
+        if self.renderer:
+            sdl2.SDL_DestroyRenderer(self.renderer.sdlrenderer)
+            self.renderer = None
+
     def clear(self, color=(0, 0, 0, 0), partial: bool = False) -> None:
         """Clear the render target."""
         if not partial or self._force_full_render:

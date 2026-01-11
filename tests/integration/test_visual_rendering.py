@@ -77,5 +77,8 @@ class TestVisualRendering(unittest.TestCase):
                 if f1.read() != f2.read():
                     self.fail(f"Visual regression detected! output {output_path} does not match baseline {baseline_path}")
 
+        # Clean up SDL resources
+        window.close()
+
 if __name__ == '__main__':
     unittest.main()

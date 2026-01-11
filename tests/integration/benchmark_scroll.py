@@ -77,14 +77,14 @@ class TestBenchmarkScroll(unittest.TestCase):
                 win.render(display_list)
                 frame_count += 1
                 sdl2.ext.get_events()
+        
+        win.close()
                 
         avg_fps = frame_count / duration
         print(f"Benchmark Complete.")
         print(f"Total Frames: {frame_count}")
         print(f"Duration: {duration:.2f}s")
         print(f"Average FPS: {avg_fps:.2f}")
-
-        sdl2.ext.quit()
 
 if __name__ == "__main__":
     unittest.main()

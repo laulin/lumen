@@ -46,6 +46,26 @@ class Window:
     def __exit__(self, exc_type, exc_val, exc_tb):
         context.pop_parent()
 
+    def close(self) -> None:
+        """Clean up SDL resources and quit SDL."""
+        # Stop debug server first
+        if self.debug_server:
+            self.debug_server.stop()
+            self.debug_server = None
+
+        # Clean up renderer resources
+        if self.renderer:
+            self.renderer.destroy()
+            self.renderer = None
+
+        # Destroy window
+        if self.window:
+            sdl2.SDL_DestroyWindow(self.window.window)
+            self.window = None
+
+        # Quit SDL
+        sdl2.ext.quit()
+
     def add_child(self, child: Any) -> None:
         """Allow adding children directly to window (e.g. for implicit context)."""
         if not hasattr(self, 'root_children'):

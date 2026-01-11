@@ -86,7 +86,10 @@ class TestBenchmarkRects(unittest.TestCase):
         
         if old_time > 0:
             print(f"Overhead: {new_time/old_time:.2f}x")
-            
+
+        # Properly destroy SDL resources before quit
+        sdl2.SDL_DestroyRenderer(renderer.sdlrenderer)
+        sdl2.SDL_DestroyWindow(window.window)
         sdl2.ext.quit()
 
 if __name__ == "__main__":

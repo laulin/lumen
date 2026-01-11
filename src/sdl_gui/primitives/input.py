@@ -15,7 +15,7 @@ class Input(BasePrimitive):
                  font: str = None,
                  size: Union[int, str] = 16,
                  color: Tuple[int, int, int, int] = (0, 0, 0, 255),
-                 background_color: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 255),
+                 background_color: Optional[Tuple[int, int, int, int]] = None,
                  border_color: Tuple[int, int, int, int] = (0, 0, 0, 255),
                  border_width: int = 1,
                  radius: int = 0,
@@ -84,7 +84,7 @@ class Input(BasePrimitive):
             data[core.KEY_FONT_SIZE] = self.size
         if self.color != (0, 0, 0, 255):
             data[core.KEY_COLOR] = self.color
-        if self.background_color != (255, 255, 255, 255):
+        if self.background_color is not None:
             data["background_color"] = self.background_color
 
         if self.border_color != (0, 0, 0, 255) and self.border_width > 0:
